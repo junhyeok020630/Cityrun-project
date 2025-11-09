@@ -1,0 +1,16 @@
+{
+  "name": "cityrun-geo",
+  "version": "1.0.0",
+  "description": "CityRun Geo scoring service",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "health": "node -e \"require('http').get('http://localhost:3000/health', r=>r.pipe(process.stdout))\""
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "ioredis": "^5.3.2"
+  }
+}
