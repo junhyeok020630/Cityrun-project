@@ -1,47 +1,39 @@
-// src/main/java/com/cityrun/api/controller/RouteController.java
 package com.cityrun.api.controller;
 
 import com.cityrun.api.model.dto.RouteCreateRequest;
 import com.cityrun.api.entity.Route;
 import com.cityrun.api.service.AuthService;
 import com.cityrun.api.service.RouteService;
-import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/routes")
 @RequiredArgsConstructor
 public class RouteController {
 
-    private final RouteService routeService;
     private final AuthService authService;
+    private final RouteService routeService;
 
     @PostMapping
-    public Map<String, Object> create(@RequestBody RouteCreateRequest req, HttpSession session) {
-        Long userId = authService.requireUserId(session.getId());
-        Route saved = routeService.create(userId, req);
-        return Map.of("status", "OK", "id", saved.getId());
+    public ResponseEntity<Route> create(@RequestBody RouteCreateRequest req,
+            HttpServletRequest request) {
+        Long userId = authService.requireUserId(request);
+        return ResponseEntity.ok(routeService.createRoute(userId, req));
     }
 
     @GetMapping("/public")
-    public List<Route> listPublic() {
-        return routeService.listPublic();
+    public ResponseEntity<List<Route>> listPublic() {
+        return ResponseEntity.ok(routeService.getPublicRoutes());
     }
 
     @GetMapping("/mine")
-    public List<Route> listMine(HttpSession session) {
-        Long userId = authService.requireUserId(session.getId());
-        return routeService.listMine(userId);
-    }
-
-    @DeleteMapping("/{id}")
-    public Map<String, Object> delete(@PathVariable Long id, HttpSession session) {
-        Long userId = authService.requireUserId(session.getId());
-        routeService.delete(userId, id);
-        return Map.of("status", "OK");
+    public ResponseEntity<List<Route>> listMine(HttpServletRequest request) {
+        Long userId = authService.requireUserId(request);
+        return ResponseEntity.ok(routeService.getUserRoutes(userId));
     }
 }

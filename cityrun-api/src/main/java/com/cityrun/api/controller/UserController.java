@@ -4,34 +4,29 @@ import com.cityrun.api.model.dto.UpdateProfileRequest;
 import com.cityrun.api.model.dto.UserResponse;
 import com.cityrun.api.service.AuthService;
 import com.cityrun.api.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/users")
+@RequiredArgsConstructor
 public class UserController {
 
-    private final UserService userService;
     private final AuthService authService;
+    private final UserService userService;
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> me(
-            @CookieValue(name="SID", required=false) String cookieSid,
-            @RequestHeader(value="X-Session-Id", required=false) String headerSid) {
-        String sid = headerSid != null ? headerSid : cookieSid;
-        Long userId = authService.requireUserId(sid);
-        return ResponseEntity.ok(userService.getUser(userId));
+    public ResponseEntity<UserResponse> me(HttpServletRequest request) {
+        Long userId = authService.requireUserId(request); // ← 세션에서 가져옴
+        return ResponseEntity.ok(userService.getProfile(userId));
     }
 
-    @PatchMapping("/me")
-    public ResponseEntity<UserResponse> updateMe(
-            @CookieValue(name="SID", required=false) String cookieSid,
-            @RequestHeader(value="X-Session-Id", required=false) String headerSid,
-            @RequestBody UpdateProfileRequest req) {
-        String sid = headerSid != null ? headerSid : cookieSid;
-        Long userId = authService.requireUserId(sid);
+    @PutMapping("/me")
+    public ResponseEntity<UserResponse> updateMe(@RequestBody UpdateProfileRequest req,
+            HttpServletRequest request) {
+        Long userId = authService.requireUserId(request);
         return ResponseEntity.ok(userService.updateProfile(userId, req));
     }
 }
