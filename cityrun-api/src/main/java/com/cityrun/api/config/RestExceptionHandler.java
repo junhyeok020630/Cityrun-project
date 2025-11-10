@@ -2,7 +2,6 @@
 package com.cityrun.api.config;
 
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.*;
 
