@@ -38,6 +38,20 @@ public class Route {
     @Column(name = "distance_m", nullable = false)
     private Integer distanceM;
 
+    // 💡 추가된 상세 점수 필드들 (DB init.sql에 정의됨)
+    @Column(name = "uphill_m") // NULL 허용 (DB 스키마 확인)
+    private Integer uphillM;
+
+    @Column(name = "crosswalk_count") // NULL 허용 (DB 스키마 확인)
+    private Integer crosswalkCount;
+
+    @Column(name = "night_score") // NULL 허용 (DB 스키마 확인)
+    private Integer nightScore;
+
+    @Column(name = "crowd_score") // NULL 허용 (DB 스키마 확인)
+    private Integer crowdScore;
+    // ----------------------------------------------------
+
     @Column(name = "final_score") // NULL 허용
     private Integer finalScore;
 
