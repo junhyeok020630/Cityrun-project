@@ -33,13 +33,6 @@ public class AuthController {
         return ResponseEntity.ok("로그아웃 성공");
     }
 
-    // 편의상 GET도 허용(원칙은 POST)
-    @GetMapping("/logout")
-    public ResponseEntity<?> logoutGet(HttpServletRequest request) {
-        authService.logout(request);
-        return ResponseEntity.ok("로그아웃 성공");
-    }
-
     @GetMapping("/health")
     public ResponseEntity<?> health() {
         return ResponseEntity.ok("{\"status\":\"OK\"}");

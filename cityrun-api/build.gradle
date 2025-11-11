@@ -31,7 +31,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.session:spring-session-data-redis'  // 세션공유(선택)
     implementation 'org.springframework.security:spring-security-crypto'    // BCrypt
-    runtimeOnly  'com.mysql:mysql-connector-j:9.1.0'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+	runtimeOnly  'com.mysql:mysql-connector-j:9.1.0'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
