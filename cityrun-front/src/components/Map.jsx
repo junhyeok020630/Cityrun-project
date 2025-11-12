@@ -1,87 +1,153 @@
-import React, { useEffect, useRef, useState } from 'react'; // 💡 useState 임포트 추가
+import React, { useEffect, useRef, useState } from 'react';
 
 const MAP_CENTER = { lat: 37.5665, lng: 126.9780 }; // 서울 시청
 
-// 💡 onMapClick 콜백 함수 추가
-const MapComponent = ({ route, userLocation, onMapClick }) => {
+const MapComponent = ({ route, userLocation, onMapClick, routeData, searchResults }) => {
   const mapRef = useRef(null); 
   const mapInstanceRef = useRef(null); 
   const polylineRef = useRef(null); 
-  const markerRef = useRef(null); 
-  const [isMapReady, setIsMapReady] = useState(false); // 💡 상태 정의 추가
+  const [isMapReady, setIsMapReady] = useState(false); 
+  const originDestMarkersRef = useRef([]); // 출발/도착 마커
+  const searchMarkersRef = useRef([]); // 💡 검색 결과 마커
 
   // 💡 지도 초기화 (최초 1회)
   useEffect(() => {
-    // window.naver.maps 객체가 존재하고 MapComponent가 처음 마운트 될 때만 실행
-    if (!window.naver || !window.naver.maps || mapInstanceRef.current) {
-        // SDK가 로드되지 않았다면 500ms 후 다시 확인 (인증 대기)
+    // ... (SDK 로딩 대기 및 지도 초기화 로직은 이전과 동일)
+    
+    // Naver Map SDK가 로드되었는지 확인
+    if (!window.naver || !window.naver.maps) {
         const timer = setTimeout(() => {
-            if (window.naver && window.naver.maps) {
-                initializeMap();
-            }
+            if (window.naver && window.naver.maps) initializeMap();
         }, 500);
         return () => clearTimeout(timer);
     }
-    
-    initializeMap();
+    if (!mapInstanceRef.current) initializeMap();
 
     function initializeMap() {
-        const { LatLng, Map, MapTypeId, Marker, Point, Event } = window.naver.maps; 
+        const { LatLng, Map, MapTypeId, Event } = window.naver.maps; 
 
-        // 지도 초기화
         const initialCenter = userLocation 
             ? new LatLng(userLocation.lat, userLocation.lng)
             : new LatLng(MAP_CENTER.lat, MAP_CENTER.lng);
 
         const map = new Map(mapRef.current, {
             center: initialCenter,
-            zoom: 13,
+            zoom: 15,
             mapTypeId: MapTypeId.NORMAL
         });
         mapInstanceRef.current = map;
 
-        // 초기 사용자 위치 마커 표시
-        markerRef.current = new Marker({
-            position: initialCenter,
-            map: map,
-            title: '내 위치',
-            icon: {
-                content: '<div style="background:red; width:10px; height:10px; border-radius:50%"></div>',
-                anchor: new naver.maps.Point(5, 5)
-            }
-        });
-
-        // 💡 지도 클릭 이벤트 리스너 추가
         Event.addListener(map, 'click', (e) => {
-            const lat = e.latlng.lat();
-            const lng = e.latlng.lng();
-            // 상위 App.jsx로 좌표 전달
-            onMapClick({ lat, lng });
+            onMapClick({ lat: e.latlng.lat(), lng: e.latlng.lng() });
         });
         
-        setIsMapReady(true); // 💡 지도 준비 완료 상태 업데이트
+        setIsMapReady(true); 
     }
-    
   }, [userLocation, onMapClick]);
 
-
-  // 💡 경로 그리기 (route 데이터가 바뀔 때마다 실행)
+  
+  // 💡 검색 결과 마커 표시 (A, B)
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!isMapReady || !map || !route) return; // 💡 isMapReady 상태를 사용하여 실행 조건 제어
+    if (!isMapReady || !map || !window.naver.maps) return;
 
-    // 기존 경로 제거
-    if (polylineRef.current) {
-        polylineRef.current.setMap(null);
+    // 기존 검색 마커 제거
+    searchMarkersRef.current.forEach(marker => marker.setMap(null));
+    searchMarkersRef.current = [];
+    
+    // 💡 검색 결과가 있을 때만 실행
+    if (searchResults && searchResults.length > 0) {
+        const { LatLng, Marker, LatLngBounds } = window.naver.maps;
+        const bounds = new LatLngBounds();
+
+        searchResults.forEach(item => {
+            const latlng = new LatLng(item.y, item.x);
+            const marker = new Marker({ // 일반 마커
+                position: latlng,
+                map: map,
+                title: item.roadAddress || item.jibunAddress
+            });
+            searchMarkersRef.current.push(marker);
+            bounds.extend(latlng);
+        });
+        
+        map.fitBounds(bounds); // 검색 결과에 맞게 지도 확대
+    }
+  }, [searchResults, isMapReady]);
+
+
+  // 💡 출발지/도착지 마커 표시 로직 (A, B)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!isMapReady || !map || !window.naver.maps) return;
+
+    // 기존 출발/도착 마커 제거
+    originDestMarkersRef.current.forEach(marker => marker.setMap(null));
+    originDestMarkersRef.current = [];
+
+    // 💡 출발지/도착지가 설정되면 검색 마커는 숨김
+    if ((routeData.origin || routeData.dest) && searchMarkersRef.current.length > 0) {
+        searchMarkersRef.current.forEach(marker => marker.setMap(null));
+        searchMarkersRef.current = [];
+    }
+
+    const { LatLng, Marker, Point } = window.naver.maps;
+
+    // 출발지 마커
+    if (routeData.origin && routeData.origin.length === 2) {
+        const originMarker = new Marker({
+            position: new LatLng(routeData.origin[0], routeData.origin[1]),
+            map: map,
+            title: '출발지',
+            icon: { 
+                content: '<div style="background:blue; width:15px; height:15px; border-radius:50%; border:2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>', 
+                anchor: new Point(7, 7) 
+            }
+        });
+        originDestMarkersRef.current.push(originMarker);
     }
     
-    // GeoJSON 파싱 및 경로 생성
+    // 도착지 마커
+    if (routeData.dest && routeData.dest.length === 2) {
+        const destMarker = new Marker({
+            position: new LatLng(routeData.dest[0], routeData.dest[1]),
+            map: map,
+            title: '도착지',
+            icon: { 
+                content: '<div style="background:green; width:15px; height:15px; border-radius:50%; border:2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.5);"></div>', 
+                anchor: new Point(7, 7) 
+            }
+        });
+        originDestMarkersRef.current.push(destMarker);
+    }
+  }, [routeData, isMapReady]); 
+
+
+  // 💡 5. 계산된 경로를 지도상에 출력 (경로가 떴다가 사라지는 문제 해결)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!isMapReady || !map || !window.naver.maps) return;
+
+    // 1. route 데이터가 없으면 -> 기존 경로를 지움
+    if (!route) {
+        if (polylineRef.current) {
+            polylineRef.current.setMap(null);
+            polylineRef.current = null;
+        }
+        return;
+    }
+
+    // 2. route 데이터가 있으면 -> 새 경로를 그림
     try {
       const { LatLng, Polyline } = window.naver.maps;
       const geojson = JSON.parse(route.geomJson);
       
+      if (polylineRef.current) {
+        polylineRef.current.setMap(null);
+      }
+
       if (geojson.type === "LineString") {
-        const path = geojson.coordinates.map(coord => new LatLng(coord[1], coord[0]));
+        const path = geojson.coordinates.map(coord => new LatLng(coord[1], coord[0])); // [lng, lat] -> [lat, lng]
         
         const polyline = new Polyline({
           map: map,
@@ -91,15 +157,22 @@ const MapComponent = ({ route, userLocation, onMapClick }) => {
           strokeWeight: 6
         });
 
-        polylineRef.current = polyline; // 폴리라인 인스턴스 저장
-        map.fitBounds(polyline.getBounds()); // 경로 전체가 보이도록 지도 영역 설정
+        polylineRef.current = polyline;
+        map.fitBounds(polyline.getBounds());
       }
     } catch (e) {
       console.error("GeoJSON 파싱 오류:", e);
     }
+
+    // 3. 클린업 함수
+    return () => {
+        if (polylineRef.current) {
+            polylineRef.current.setMap(null);
+        }
+    };
   }, [route, isMapReady]); 
 
-  // 지도가 로드되지 않으면 로딩 메시지를 표시
+  // ... (return 렌더링 로직 생략)
   return (
     <div 
         ref={mapRef} 
@@ -111,13 +184,12 @@ const MapComponent = ({ route, userLocation, onMapClick }) => {
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
-            marginBottom: '20px' // UI 간격 확보
+            marginBottom: '20px'
         }}
     >
         {!isMapReady && (
             <p style={{ color: 'gray', textAlign: 'center' }}>
-                Naver Map 로드 대기 중 (인증 오류 지속)<br/>
-                API 연동 테스트는 아래 버튼으로 진행하세요.
+                Naver Map 로드 대기 중...
             </p>
         )}
     </div>

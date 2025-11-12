@@ -1,4 +1,5 @@
 const express = require("express");
+const { Pool } = require("pg");
 const cookieParser = require("cookie-parser");
 const Redis = require("ioredis");
 
@@ -11,90 +12,93 @@ const redis = new Redis({
   port: 6379,
 });
 
-// 💡 Geo 엔진은 이제 TMAP 경로를 기반으로 점수 계산만 합니다.
+// PostGIS DB 연결 풀 (cityrun-postgis 컨테이너)
+const pool = new Pool({
+  user: "cjh",
+  host: "cityrun-postgis",
+  database: "osm_data",
+  password: "2323",
+  port: 5432,
+});
+
+/**
+ * 💡 OSM/PostGIS 기반 커스텀 경로 탐색
+ */
 app.post("/score-route", async (req, res) => {
-  // 💡 입력: distanceM, geomJson (실제 TMAP 경로), prefs
-  const { distanceM, geomJson, prefs } = req.body || {};
-  if (!distanceM || !geomJson) {
-    return res.status(400).json({ error: "distanceM and geomJson required" });
+  // 💡 API 서버로부터 (distanceKm, origin, prefs)를 받음
+  const { distanceKm, origin, prefs } = req.body || {};
+
+  if (!origin || !distanceKm) {
+    return res.status(400).json({ error: "origin and distanceKm required" });
   }
 
-  // 1. 현재 시간대 파악
-  const now = new Date();
-  const currentHour = now.getHours();
-  const isNight = currentHour >= 19 || currentHour < 6;
+  const startLat = origin[0];
+  const startLng = origin[1];
+  const targetDistanceM = distanceKm * 1000;
 
-  // 2. TMAP 경로 기반으로 커스텀 Metrics 시뮬레이션
-  const route = {
-    distanceM: distanceM,
-    uphillM: Math.floor(distanceM / 100) * (Math.random() * 0.5 + 0.5), // 거리에 비례하는 경사 시뮬레이션
-    crosswalkCount: Math.floor(distanceM / 1000) * (Math.random() * 4 + 1), // 거리에 비례하는 횡단보도 시뮬레이션
-    isMainRoad: distanceM > 10000 ? true : Math.random() > 0.5, // 장거리는 대로 시뮬레이션
-    crowdLevel: Math.floor(Math.random() * 10), // 0~9
-  };
+  // 💡 1. 출발지에서 가장 가까운 OSM 도로망 노드(node) 찾기
+  // 💡 'id' -> 'osm_id', 'geom' -> 'way'로 수정
+  // 💡 좌표계 변환: 4326(경위도) -> 3857(웹 메르카토르)
+  const findStartNodeSql = `
+    SELECT osm_id as id, ST_AsText(ST_Transform(way, 4326)) as location
+    FROM planet_osm_point 
+    ORDER BY way <-> ST_Transform(ST_SetSRID(ST_MakePoint(${startLng}, ${startLat}), 4326), 3857)
+    LIMIT 1;
+  `;
 
-  // 3. 점수 계산 로직 (커스텀 가중치 감점)
-  let score = 100;
-  let totalPenalty = 0;
-
-  // --- A. 경사도 (Elevation) 감점 ---
-  const maxUphillThreshold = 100;
-  let uphillPenalty = 0;
-  if (route.uphillM > maxUphillThreshold) {
-    uphillPenalty = (route.uphillM / maxUphillThreshold) * 15;
-  } else {
-    uphillPenalty = route.uphillM * 0.2;
-  }
-  if (prefs?.avoidUphill === true) {
-    uphillPenalty *= 1.5;
-  }
-  totalPenalty += uphillPenalty;
-
-  // --- B. 횡단보도/신호등 (Crosswalks) 감점 ---
-  let crosswalkPenalty = route.crosswalkCount * 3;
-  if (prefs?.minimizeCrosswalks === true) {
-    crosswalkPenalty *= 1.5;
-  }
-  totalPenalty += crosswalkPenalty;
-
-  // --- C. 시간대/혼잡도 (Time/Crowd/Lighting) 감점 ---
-  let timePenalty = 0;
-  if (isNight) {
-    if (!route.isMainRoad) {
-      timePenalty += 15;
+  try {
+    // PostGIS DB에 쿼리 실행
+    const startNodeResult = await pool.query(findStartNodeSql);
+    if (startNodeResult.rows.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "출발지 근처의 도로를 찾을 수 없습니다." });
     }
-  } else {
-    if (route.isMainRoad) {
-      timePenalty += 10 + route.crowdLevel * 2;
-    }
+    const startNode = startNodeResult.rows[0];
+
+    // 💡 2. pg_routing을 사용한 실제 경로 탐색 (다음 단계)
+    // (현재는 PostGIS 연결 성공 및 노드 찾기 테스트만 진행)
+
+    // 💡 3. 시뮬레이션 응답 반환 (PostGIS 연결 성공 기준)
+    const simulatedGeoJson = {
+      type: "LineString",
+      coordinates: [
+        [startLng, startLat],
+        [startLng + 0.01, startLat + 0.01],
+        [startLng, startLat + 0.02],
+      ],
+    };
+    const simulatedMetrics = {
+      distanceM: targetDistanceM,
+      uphillM: Math.floor(targetDistanceM / 100) * (Math.random() * 0.5 + 0.5),
+      crosswalkCount:
+        Math.floor(targetDistanceM / 1000) * (Math.random() * 4 + 1),
+      finalScore: 80, // 시뮬레이션 점수
+      nightScore: 70,
+      crowdScore: 60,
+      name: `OSM 커스텀 경로 (${distanceKm}km)`,
+      geomJson: JSON.stringify(simulatedGeoJson),
+      originLat: startLat,
+      originLng: startLng,
+      destLat: startLat + 0.02, // 시뮬레이션 도착지
+      destLng: startLng,
+    };
+
+    res.json({
+      route: simulatedMetrics,
+      message: `PostGIS 연결 성공! 출발 노드 ID: ${startNode.id} (Table: planet_osm_point)`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("PostGIS Query Error:", err);
+    res
+      .status(500)
+      .json({ error: "PostGIS 경로 탐색 실패", details: err.message });
   }
-  if (prefs?.avoidCrowd === true) {
-    timePenalty += route.crowdLevel * 3;
-  }
-  totalPenalty += timePenalty;
-
-  // 최종 점수 계산
-  score = Math.floor(Math.max(0, score - totalPenalty));
-
-  // 4. 최종 점수 및 상세 데이터 생성
-  const finalRouteMetrics = {
-    distanceM: route.distanceM,
-    uphillM: Math.floor(route.uphillM),
-    crosswalkCount: Math.floor(route.crosswalkCount),
-    isMainRoad: route.isMainRoad,
-    crowdLevel: route.crowdLevel,
-    finalScore: score,
-    nightScore: isNight ? (route.isMainRoad ? 90 : 30) : 70,
-    crowdScore: 100 - route.crowdLevel * 10,
-    name: "TMAP 추천 경로",
-  };
-
-  res.json({
-    route: finalRouteMetrics,
-    timestamp: new Date().toISOString(),
-  });
 });
 
 app.get("/health", (req, res) => res.json({ status: "OK" }));
 
-app.listen(3000, () => console.log("Geo-engine running on port 3000"));
+app.listen(3000, () =>
+  console.log("Geo-engine (OSM/PostGIS Mode) running on port 3000")
+);
