@@ -29,35 +29,35 @@ app.post("/score-route", async (req, res) => {
   const currentHour = now.getHours();
   const isNight = currentHour >= 19 || currentHour < 6;
 
-  // 2. 가상의 경로 메타데이터 생성 (3가지 대안 경로 시뮬레이션)
-  // 실제라면 Geo API에서 받아와야 할 데이터입니다.
+  // 2. 가상의 경로 메타데이터 생성 (3가지 대안 경로 시뮬레이션 - 편차 증가)
+  const baseDistanceM = distanceKm * 1000;
   const simulatedRoutes = [
     // Route 1: 저경사, 횡단보도 많음, 큰 길 (나이트런 선호)
     {
       id: 1,
-      distanceM: distanceKm * 1000 * (0.95 + Math.random() * 0.1),
-      uphillM: Math.floor(Math.random() * 20),
-      crosswalkCount: Math.floor(Math.random() * 15) + 10,
+      distanceM: baseDistanceM * (0.98 + Math.random() * 0.04),
+      uphillM: Math.floor(Math.random() * 10 + 5),
+      crosswalkCount: Math.floor(Math.random() * 15 + 15),
       isMainRoad: true,
-      crowdLevel: Math.floor(Math.random() * 10),
+      crowdLevel: Math.floor(Math.random() * 4) + 6,
     },
     // Route 2: 중간 경사, 횡단보도 적음, 좁은 길 (데이런 선호)
     {
       id: 2,
-      distanceM: distanceKm * 1000 * (0.95 + Math.random() * 0.1),
-      uphillM: Math.floor(Math.random() * 50) + 20,
-      crosswalkCount: Math.floor(Math.random() * 5),
+      distanceM: baseDistanceM * (0.98 + Math.random() * 0.04),
+      uphillM: Math.floor(Math.random() * 30 + 30),
+      crosswalkCount: Math.floor(Math.random() * 5 + 3),
       isMainRoad: false,
-      crowdLevel: Math.floor(Math.random() * 10),
+      crowdLevel: Math.floor(Math.random() * 4) + 1,
     },
-    // Route 3: 고경사, 횡단보도 중간, 큰 길
+    // Route 3: 고경사, 횡단보도 중간, 큰 길 (챌린지 코스)
     {
       id: 3,
-      distanceM: distanceKm * 1000 * (0.95 + Math.random() * 0.1),
-      uphillM: Math.floor(Math.random() * 100) + 50,
-      crosswalkCount: Math.floor(Math.random() * 10) + 5,
+      distanceM: baseDistanceM * (0.98 + Math.random() * 0.04),
+      uphillM: Math.floor(Math.random() * 80 + 80),
+      crosswalkCount: Math.floor(Math.random() * 10 + 5),
       isMainRoad: true,
-      crowdLevel: Math.floor(Math.random() * 10),
+      crowdLevel: Math.floor(Math.random() * 5) + 3,
     },
   ];
 
@@ -69,63 +69,56 @@ app.post("/score-route", async (req, res) => {
     let totalPenalty = 0; // 감점 합산
 
     // --- A. 경사도 (Elevation) 감점 ---
-    // 오르막이 100m가 넘으면 강한 감점 (부상/페이스 방해)
     const maxUphillThreshold = 100;
     let uphillPenalty = 0;
     if (route.uphillM > maxUphillThreshold) {
-      uphillPenalty = (route.uphillM / maxUphillThreshold) * 15; // 100m당 15점 감점
+      uphillPenalty = (route.uphillM / maxUphillThreshold) * 15;
     } else {
-      uphillPenalty = route.uphillM * 0.2; // 기본 경사 감점
+      uphillPenalty = route.uphillM * 0.2;
     }
-    // 사용자 선호도 반영: 경사를 피하고 싶다면 감점 가중치 증가
     if (prefs?.avoidUphill === true) {
-      uphillPenalty *= 1.5;
+      uphillPenalty *= 1.5; // 선호도에 따라 감점 가중치 증가
     }
     totalPenalty += uphillPenalty;
 
     // --- B. 횡단보도/신호등 (Crosswalks) 감점 ---
-    // 횡단보도 1개당 3점 감점 (흐름 방해)
     let crosswalkPenalty = route.crosswalkCount * 3;
-    // 사용자 선호도 반영: 신호등 회피 선호 시 감점 가중치 증가
     if (prefs?.minimizeCrosswalks === true) {
-      crosswalkPenalty *= 1.2;
+      crosswalkPenalty *= 1.5;
     }
     totalPenalty += crosswalkPenalty;
 
     // --- C. 시간대/혼잡도 (Time/Crowd/Lighting) 감점 ---
     let timePenalty = 0;
     if (isNight) {
-      // 밤: 가로등 많은 큰 길 선호. 좁은 길은 위험 감점
+      // 밤: 큰 길(조명) 선호. 좁은 길은 위험 감점
       if (!route.isMainRoad) {
-        timePenalty += 15; // 좁은 길 위험 감점
+        timePenalty += 15;
       }
     } else {
       // 낮: 통행량 적은 골목길 선호. 큰 길(혼잡)은 쾌적성 감점
       if (route.isMainRoad) {
-        timePenalty += 10 + route.crowdLevel * 2; // 큰 길 혼잡도 비례 감점
+        timePenalty += 10 + route.crowdLevel * 2;
       }
     }
-    // 사용자 선호도 반영: 혼잡 회피 선호 시 혼잡도 감점 가중치 증가
     if (prefs?.avoidCrowd === true) {
       timePenalty += route.crowdLevel * 3;
     }
     totalPenalty += timePenalty;
 
-    // 최종 점수 계산 (0~100 사이)
+    // 최종 점수 계산
     score = Math.floor(Math.max(0, score - totalPenalty));
 
     // --- 4. 상세 점수 저장 및 최적 경로 판별 ---
     route.finalScore = score;
-    route.uphillM = route.uphillM;
-    route.crosswalkCount = route.crosswalkCount;
-    route.nightScore = isNight ? (route.isMainRoad ? 90 : 30) : 70; // 밤길 안전 점수 시뮬레이션
-    route.crowdScore = 100 - route.crowdLevel * 10; // 혼잡도 점수 (낮을수록 좋음)
+    route.nightScore = isNight ? (route.isMainRoad ? 90 : 30) : 70;
+    route.crowdScore = 100 - route.crowdLevel * 10;
 
     // 가상의 GeoJSON 데이터 생성
     route.geomJson = JSON.stringify({
       type: "LineString",
       coordinates: [
-        [origin[1], origin[0]], // [lng, lat] 형식
+        [origin[1], origin[0]],
         [dest[1], dest[0]],
       ],
     });
@@ -141,7 +134,7 @@ app.post("/score-route", async (req, res) => {
   const isLoop = origin[0] === dest[0] && origin[1] === dest[1];
   if (isLoop) {
     bestRoute.name = `순환 코스 (${distanceKm}km)`;
-    // 순환 코스를 시뮬레이션하기 위해 GeoJSON 좌표를 확장
+    // GeoJSON 좌표를 확장하여 순환 코스 모양 시뮬레이션
     const lngOffset = 0.005 * (distanceKm / 5);
     const latOffset = 0.005 * (distanceKm / 5);
     bestRoute.geomJson = JSON.stringify({
@@ -149,8 +142,8 @@ app.post("/score-route", async (req, res) => {
       coordinates: [
         [origin[1], origin[0]],
         [origin[1] + lngOffset, origin[0]],
+        [origin[1] + lngOffset, origin[0] + latOffset],
         [origin[1], origin[0] + latOffset],
-        [origin[1] - lngOffset, origin[0] + latOffset],
         [dest[1], dest[0]],
       ],
     });
