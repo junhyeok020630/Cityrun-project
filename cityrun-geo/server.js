@@ -1,7 +1,9 @@
+// package com.cityrun.api.model.dto; // 💡 Redis require 구문 안정화
+
 const express = require("express");
 const { Pool } = require("pg");
 const cookieParser = require("cookie-parser");
-const Redis = require("ioredis"); // 💡 Redis require 구문 안정화
+const Redis = require("ioredis");
 
 const app = express();
 app.use(express.json());
@@ -35,7 +37,6 @@ const buildEdgesSql = (prefs) => {
 
   // 횡단보도 회피: tag_id가 108(crossing)일 경우 비용을 대폭 증가시킵니다.
   if (avoidCrosswalks) {
-    // 횡단보도일 경우 비용(cost)에 1000m를 추가하는 페널티 (경로 탐색 시 우회 유도)
     const crosswalkPenalty = `CASE WHEN tag_id = ${CROSSWALK_TAG_ID} THEN 1000.0 ELSE 0.0 END`;
     cost += ` + ${crosswalkPenalty}`;
     reverse_cost += ` + ${crosswalkPenalty}`;
@@ -55,13 +56,27 @@ const buildEdgesSql = (prefs) => {
 };
 
 /**
- * 💡 OSM/PostGIS 기반 커스텀 경로 탐색 (최종 안정화 + tag_id 직접 사용 버전)
+ * 💡 OSM/PostGIS 기반 커스텀 경로 탐색 (유효성 검사 강화 버전)
  */
 app.post("/score-route", async (req, res) => {
   const { distanceKm, origin, prefs } = req.body || {};
 
-  if (!origin || !distanceKm) {
-    return res.status(400).json({ error: "origin and distanceKm required" });
+  // 💡 유효성 검사 강화: origin이 배열이고 길이가 2이며, distanceKm이 유효한 숫자인지 확인
+  if (
+    !Array.isArray(origin) ||
+    origin.length !== 2 ||
+    typeof distanceKm !== "number" ||
+    distanceKm <= 0
+  ) {
+    console.error(
+      `Validation Failed: Received Body: ${JSON.stringify(req.body)}`
+    );
+    return res
+      .status(400)
+      .json({
+        error:
+          "Invalid input: origin must be [lat, lng] array, distanceKm must be positive number.",
+      });
   }
 
   const startLat = origin[0];
@@ -110,12 +125,12 @@ app.post("/score-route", async (req, res) => {
         JOIN ways w ON l.edge = w.id
         WHERE l.edge != -1 
       )
-      -- 💡 5. 결과 집계: tag_id를 직접 사용하여 횡단보도 카운트 (모호성 제거를 위해 별칭 사용)
+      -- 💡 5. 결과 집계
       SELECT 
         ST_AsGeoJSON(ST_Collect(ST_Transform(lg.the_geom, 4326))) AS geomJson, 
         SUM(lg.length_m) AS totalDistanceM,
-        COUNT(CASE WHEN lg.tag_id = ${CROSSWALK_TAG_ID} THEN 1 END) AS totalCrosswalks 
-      FROM loop_geom lg; // 💡 최종 SELECT 문에서 lg 별칭 사용
+        COUNT(CASE WHEN lg.tag_id = ${CROSSWALK_TAG_ID} THEN 1 END) AS totalCrosswalks
+      FROM loop_geom lg;
     `;
 
     const loopResult = await pool.query(finalQuery);
@@ -152,8 +167,8 @@ app.post("/score-route", async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
+    // 💡 오류 상세 정보를 HTTP 응답에 포함시켜 클라이언트/프론트엔드에서 최종 오류를 볼 수 있도록 합니다.
     console.error("PostGIS Query Error:", err);
-    // 💡 오류 상세 정보를 HTTP 응답에 포함시켜 클라이언트/프런트엔드에서 최종 오류를 볼 수 있도록 합니다.
     res
       .status(500)
       .json({ error: "PostGIS 경로 탐색 실패", details: err.message });
