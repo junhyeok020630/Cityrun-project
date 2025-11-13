@@ -13,21 +13,20 @@ import org.springframework.core.ParameterizedTypeReference;
 
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap; // 💡 추가
+import java.util.HashMap; // 💡 사용하지 않지만 임포트는 그대로 유지
 
 @Service
 @RequiredArgsConstructor
 public class RouteService {
 
     private final RouteRepository routeRepo;
-    // 💡 TmapApiService 제거
 
     @Qualifier("geoWebClient")
     private final WebClient geoWebClient;
 
     @Transactional
     public Route createRoute(Long userId, RouteCreateRequest req) {
-        // ... (createRoute 로직은 이전과 동일 - Route 엔티티 필드 확인)
+        // ... (생략)
         Route r = Route.builder()
                 .userId(userId)
                 .name(req.getName())
@@ -61,13 +60,8 @@ public class RouteService {
     @Transactional(readOnly = true)
     public Map<String, Object> recommendRoute(RecommendRequest req) {
 
-        // 💡 1. 프론트엔드에서 받은 요청(origin, distanceKm, prefs)을
-        // 💡 2. Geo Engine (OSM/PostGIS)으로 전달합니다.
-
-        Map<String, Object> geoInput = new HashMap<>();
-        geoInput.put("origin", req.getOrigin());
-        geoInput.put("distanceKm", req.getDistanceKm()); // 💡 목표 거리 전달
-        geoInput.put("prefs", req.getPrefs());
+        // 💡 1. Geo Engine (OSM/PostGIS)으로 요청(req) 자체를 전달합니다.
+        // 💡 HashMap 재구성을 제거하고 DTO 객체 자체를 사용, 직렬화 문제를 해결합니다.
 
         // 3. Geo Engine 호출 (커스텀 경로 탐색)
         ParameterizedTypeReference<Map<String, Object>> typeRef = new ParameterizedTypeReference<>() {
@@ -75,7 +69,7 @@ public class RouteService {
 
         Map<String, Object> geoResponse = geoWebClient.post()
                 .uri("/score-route")
-                .bodyValue(geoInput)
+                .bodyValue(req) // 💡 변경: HashMap 대신 DTO 객체 (req) 자체를 body로 전송
                 .retrieve()
                 .bodyToMono(typeRef)
                 .block();
