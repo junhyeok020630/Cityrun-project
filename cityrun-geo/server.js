@@ -32,7 +32,7 @@ const CANDIDATE_VIA_LIMIT = 15; // 중간 지점 후보 개수
 // “최종 루프 거리”를 목표 거리와 비교할 때 허용 비율
 // 예: target = 5km → [3km, 7km] 사이 아니면 이상치로 간주
 const VIA_DISTANCE_RATIO_MIN = 0.6;
-const VIA_DISTANCE_RATIO_MAX = 1.4;
+const VIA_DISTANCE_RATIO_MAX = 1.7;
 
 // 거리당 허용 가능한 최대 횡단보도 개수 (거칠게 튜닝용)
 // 예: 5km * 12 = 60개를 넘으면 이상치로 본다.
@@ -287,11 +287,11 @@ app.post("/score-route", async (req, res) => {
           )}, crosswalks=${totalCrosswalks}, score=${score.toFixed(4)}`
         );
 
-        if (!best) {
-          return res.status(400).json({
-            errorCode: "NO_ROUTE",
-            error: "경로를 찾을 수 없습니다. 출발지를 다시 설정해주세요.",
-          });
+        if (!best || score < best.score) {
+          best = {
+            ...loopRoute,
+            viaNodeId: viaNodeId, // (디버깅용) 어떤 노드가 선택됐는지 저장
+          };
         }
       } catch (e) {
         console.error(

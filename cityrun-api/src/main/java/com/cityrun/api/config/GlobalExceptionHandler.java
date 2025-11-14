@@ -50,6 +50,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(body(status, msg));
     }
 
+    // 400 - (IllegalArgumentException)
+    // (RouteService가 geo-engine의 4xx 에러를 변환할 때 사용)
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(body(status, ex.getMessage()));
+    }
+
     // @Valid 바디 검증 실패
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
