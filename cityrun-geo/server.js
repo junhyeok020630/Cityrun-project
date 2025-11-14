@@ -26,10 +26,17 @@ const pool = new Pool({
 });
 
 // --- 상수 설정 ---
-const CROSSWALK_PENALTY_M = 150.0; // crosswalk 1개당 100m 정도 페널티
+const CROSSWALK_PENALTY_M = 150.0; // crosswalk 1개당 150m 정도 페널티
 const CANDIDATE_VIA_LIMIT = 15; // 중간 지점 후보 개수
-// const VIA_DISTANCE_RATIO_MIN = 0.7; // 목표 거리의 절반 기준 하한
-// const VIA_DISTANCE_RATIO_MAX = 1.3; // 목표 거리의 절반 기준 상한
+
+// “최종 루프 거리”를 목표 거리와 비교할 때 허용 비율
+// 예: target = 5km → [3km, 7km] 사이 아니면 이상치로 간주
+const VIA_DISTANCE_RATIO_MIN = 0.6;
+const VIA_DISTANCE_RATIO_MAX = 1.4;
+
+// 거리당 허용 가능한 최대 횡단보도 개수 (거칠게 튜닝용)
+// 예: 5km * 12 = 60개를 넘으면 이상치로 본다.
+const MAX_CROSSWALKS_PER_KM = 12;
 
 // --- Edge SQL Builder ---
 // 1) 순수 거리 기반 (driving distance용)
@@ -160,7 +167,6 @@ async function computeLoopRoute(
 }
 
 // --- 메인 엔드포인트: /score-route ---
-// 입력: { distanceKm, origin: [lat, lng], prefs: { minimizeCrosswalks: bool, ... } }
 app.post("/score-route", async (req, res) => {
   const { distanceKm, origin, prefs } = req.body || {};
 
@@ -213,7 +219,7 @@ app.post("/score-route", async (req, res) => {
     const startNodeId = Number(startNodeResult.rows[0].id);
     console.log(`[/score-route] startNodeId = ${startNodeId}`);
 
-    // 2) pgr_drivingdistance 로 "목표 거리의 절반 근처" 후보 노드 찾기
+    // 2) pgr_drivingdistance 로 "목표 거리의 절반" 기준으로 후보 노드 찾기
     const distanceEdgeSql = buildDistanceEdgeSql();
     const safeDistanceEdgeSql = distanceEdgeSql.replace(/'/g, "''");
 
@@ -281,14 +287,11 @@ app.post("/score-route", async (req, res) => {
           )}, crosswalks=${totalCrosswalks}, score=${score.toFixed(4)}`
         );
 
-        if (!best || score < best.score) {
-          best = {
-            viaNodeId,
-            totalDistanceM,
-            totalCrosswalks,
-            geomJson,
-            score,
-          };
+        if (!best) {
+          return res.status(400).json({
+            errorCode: "NO_ROUTE",
+            error: "경로를 찾을 수 없습니다. 출발지를 다시 설정해주세요.",
+          });
         }
       } catch (e) {
         console.error(
@@ -301,6 +304,38 @@ app.post("/score-route", async (req, res) => {
     if (!best) {
       return res.status(404).json({
         error: `목표 거리(${distanceKm}km)에 맞는 루프 코스를 생성하지 못했습니다.`,
+      });
+    }
+
+    // === 이상치(거리/횡단보도) 필터링 ===
+    const distanceRatio = best.totalDistanceM / targetDistanceM;
+    const maxCrosswalksAllowed = distanceKm * MAX_CROSSWALKS_PER_KM;
+
+    const isDistanceOutlier =
+      distanceRatio < VIA_DISTANCE_RATIO_MIN ||
+      distanceRatio > VIA_DISTANCE_RATIO_MAX;
+
+    const isCrosswalkOutlier = best.totalCrosswalks > maxCrosswalksAllowed;
+
+    if (isDistanceOutlier || isCrosswalkOutlier) {
+      console.warn(
+        `[/score-route] OUTLIER route rejected: ` +
+          `dist=${best.totalDistanceM.toFixed(
+            1
+          )}m (ratio=${distanceRatio.toFixed(2)}), ` +
+          `crosswalks=${best.totalCrosswalks}, ` +
+          `maxCrosswalksAllowed=${maxCrosswalksAllowed}`
+      );
+
+      // 🔻 여기서 400 + 에러코드/메시지 명확하게 내려줌
+      return res.status(400).json({
+        errorCode: "OUTLIER_ROUTE",
+        error: "경로를 찾을 수 없습니다. 출발지를 다시 설정해주세요.",
+        detail: {
+          distanceRatio,
+          crosswalks: best.totalCrosswalks,
+          maxCrosswalksAllowed,
+        },
       });
     }
 

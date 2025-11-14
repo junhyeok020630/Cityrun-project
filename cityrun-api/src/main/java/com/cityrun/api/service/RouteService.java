@@ -13,7 +13,6 @@ import org.springframework.core.ParameterizedTypeReference;
 
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap; // 💡 사용하지 않지만 임포트는 그대로 유지
 
 @Service
 @RequiredArgsConstructor
