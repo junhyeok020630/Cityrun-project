@@ -99,7 +99,7 @@ const styles = {
     height: '80px',
     borderRadius: '50%', // 원형
     padding: '0', // 패딩 제거
-    fontSize: '30px', // 아이콘 크기
+    fontSize: '40px', // 아이콘 크기
     fontWeight: 'bold',
     backgroundColor: 'black', // (항목 3) 검정 배경
     color: 'white', // (항목 3) 흰색 아이콘
