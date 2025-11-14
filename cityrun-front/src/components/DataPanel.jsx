@@ -1,35 +1,22 @@
 import React from 'react';
 
-const DataPanel = ({ route, isNavigating, deviationMessage }) => {
+const DataPanel = ({ route }) => {
     if (!route) {
         return <div style={styles.container}><p>경로 데이터를 로드 중입니다...</p></div>;
     }
 
-    const { uphillM, crosswalkCount, finalScore, nightScore, crowdScore, distanceM } = route;
+    const { distanceM } = route;
     
-    // 경사도, 횡단보도, 혼잡도 데이터를 아이콘과 함께 시각화
+    // '거리' 외 모든 메트릭 제거
     const metrics = [
         { label: '거리', value: `${(distanceM / 1000).toFixed(2)} km`, icon: '📏' },
-        { label: '최종 점수', value: `${finalScore}점`, icon: '🏆', color: finalScore > 75 ? 'green' : finalScore > 50 ? 'orange' : 'red' },
-        { label: '총 경사', value: `${uphillM} m`, icon: '⛰️', tooltip: '오르막길 미터 수' },
-        { label: '신호등/횡단보도', value: `${crosswalkCount} 개`, icon: '🚦', tooltip: '러닝 흐름 방해 요소' },
-        { label: '야간 안전 점수', value: `${nightScore}점`, icon: '🌙' },
-        { label: '혼잡도 점수', value: `${crowdScore}점`, icon: '👥' },
     ];
 
     return (
         <div style={styles.container}>
-            {isNavigating ? (
-                <div style={styles.navStatus}>
-                    <p style={{ color: deviationMessage ? 'red' : 'green' }}>
-                        {deviationMessage || '🏃‍♂️ 경로 이탈 감시 중'}
-                    </p>
-                </div>
-            ) : (
-                <p style={{ fontWeight: 'bold', borderBottom: '1px solid #ddd', paddingBottom: '5px' }}>
-                    {route.name} 상세 정보
-                </p>
-            )}
+            <p style={{ fontWeight: 'bold', borderBottom: '1px solid #ddd', paddingBottom: '5px' }}>
+                {route.name} 상세 정보
+            </p>
 
             <div style={styles.metricsGrid}>
                 {metrics.map(m => (
@@ -57,7 +44,7 @@ const styles = {
     },
     metricsGrid: {
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
+        gridTemplateColumns: '1fr', // 1열로 변경
         gap: '10px',
         marginTop: '10px',
     },
@@ -76,12 +63,7 @@ const styles = {
         fontSize: '16px',
         fontWeight: 'bold',
     },
-    navStatus: {
-        fontSize: '20px',
-        fontWeight: 'extrabold',
-        textAlign: 'center',
-        padding: '10px',
-    }
+    // (참고) navStatus 스타일은 이제 사용되지 않습니다.
 };
 
 export default DataPanel;

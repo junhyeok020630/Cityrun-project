@@ -4,17 +4,12 @@ import React from 'react';
  * Naver 지도 검색 결과 목록을 표시하는 컴포넌트
  * @param {array} results - Geocoding API 응답 배열 (response.v2.addresses)
  * @param {function} onSetOrigin - '출발' 버튼 클릭 시 호출될 함수
- * @param {function} onSetDest - '도착' 버튼 클릭 시 호출될 함수
  */
-const SearchResultPanel = ({ results, onSetOrigin, onSetDest }) => {
+const SearchResultPanel = ({ results, onSetOrigin }) => {
   
   const handleSetOrigin = (item) => {
     // Naver API는 y: lat, x: lng 입니다.
     onSetOrigin({ lat: parseFloat(item.y), lng: parseFloat(item.x) });
-  };
-  
-  const handleSetDest = (item) => {
-    onSetDest({ lat: parseFloat(item.y), lng: parseFloat(item.x) });
   };
 
   return (
@@ -33,12 +28,6 @@ const SearchResultPanel = ({ results, onSetOrigin, onSetDest }) => {
                 style={{...styles.button, ...styles.originButton}}
               >
                 출발
-              </button>
-              <button 
-                onClick={() => handleSetDest(item)} 
-                style={{...styles.button, ...styles.destButton}}
-              >
-                도착
               </button>
             </div>
           </li>
@@ -100,9 +89,7 @@ const styles = {
   originButton: {
     backgroundColor: '#007bff',
   },
-  destButton: {
-    backgroundColor: '#28a745',
-  }
+  // (참고) destButton 스타일은 이제 사용되지 않습니다.
 };
 
 export default SearchResultPanel;

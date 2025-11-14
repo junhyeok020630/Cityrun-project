@@ -33,14 +33,6 @@ public class UserRoutesController {
         return ResponseEntity.ok(saved);
     }
 
-    @GetMapping("/public")
-    public ResponseEntity<List<Route>> listPublic() {
-        // 기존: routeRepo.findByIsPublicTrueOrderByIdDesc()
-        // 변경: RouteService의 getPublicRoutes 메서드 사용
-        List<Route> routes = routeService.getPublicRoutes();
-        return ResponseEntity.ok(routes);
-    }
-
     @GetMapping("/mine")
     public ResponseEntity<List<Route>> listMine(HttpServletRequest request) {
         Long userId = authService.requireUserId(request);

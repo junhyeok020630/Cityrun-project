@@ -56,11 +56,6 @@ public class RouteService {
     }
 
     @Transactional(readOnly = true)
-    public List<Route> getPublicRoutes() {
-        return routeRepo.findByIsPublicTrueOrderByIdDesc();
-    }
-
-    @Transactional(readOnly = true)
     public List<Route> getUserRoutes(Long userId) {
         return routeRepo.findByUserIdOrderByIdDesc(userId);
     }
