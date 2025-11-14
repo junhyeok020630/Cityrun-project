@@ -3,20 +3,16 @@ import React, { useEffect, useRef, useState } from 'react';
 const MAP_CENTER = { lat: 37.5665, lng: 126.9780 }; // 서울 시청
 
 const MapComponent = ({ route, userLocation, onMapClick, routeData, searchResults }) => {
-  const mapRef = useRef(null);               // DOM element
-  const mapInstanceRef = useRef(null);       // naver.maps.Map 인스턴스
-  const polylineRef = useRef(null);          // 경로 Polyline
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const polylineRef = useRef(null);
+  const [isMapReady, setIsMapReady] = useState(false);
   const originDestMarkersRef = useRef([]);   // 출발/도착 마커
   const searchMarkersRef = useRef([]);       // 검색 결과 마커
-  const clickListenerRef = useRef(null);     // 지도 클릭 리스너
+  const clickListenerRef = useRef(null);     // 클릭 리스너 핸들
 
-  const [isMapReady, setIsMapReady] = useState(false);
-
-  // ===============================
-  // 1. 지도 초기화 (최초 1회)
-  // ===============================
+  // --- 1. 지도 초기화 ---
   useEffect(() => {
-    // Naver Map SDK 로드 대기
     if (!window.naver || !window.naver.maps) {
       const timer = setTimeout(() => {
         if (window.naver && window.naver.maps && !mapInstanceRef.current) {
@@ -48,30 +44,28 @@ const MapComponent = ({ route, userLocation, onMapClick, routeData, searchResult
     }
   }, [userLocation]);
 
-  // ==============================================
-  // 2. 지도 클릭 리스너 등록 (onMapClick이 바뀔 때마다)
-  // ==============================================
+  // --- 2. 클릭 리스너 ---
   useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!isMapReady || !map || !window.naver?.maps || !onMapClick) return;
+    if (!isMapReady || !mapInstanceRef.current || !window.naver?.maps) return;
 
     const { Event } = window.naver.maps;
 
-    // 기존 리스너 제거
     if (clickListenerRef.current) {
       Event.removeListener(clickListenerRef.current);
       clickListenerRef.current = null;
     }
 
-    // 최신 onMapClick을 사용하는 리스너 등록
-    clickListenerRef.current = Event.addListener(map, 'click', (e) => {
-      // Naver Maps v3 이벤트 객체에 따라 e.coord 또는 e.latlng 사용
-      const lat = e.latlng ? e.latlng.lat() : e.coord.lat();
-      const lng = e.latlng ? e.latlng.lng() : e.coord.lng();
-      onMapClick({ lat, lng });
-    });
+    clickListenerRef.current = Event.addListener(
+      mapInstanceRef.current,
+      'click',
+      (e) => {
+        onMapClick({
+          lat: e.latlng.lat(),
+          lng: e.latlng.lng(),
+        });
+      }
+    );
 
-    // cleanup
     return () => {
       if (clickListenerRef.current) {
         Event.removeListener(clickListenerRef.current);
@@ -80,132 +74,191 @@ const MapComponent = ({ route, userLocation, onMapClick, routeData, searchResult
     };
   }, [onMapClick, isMapReady]);
 
-  // ======================================
-  // 3. 검색 결과 마커 표시
-  // ======================================
+  // --- 3. 검색 결과 마커 ---
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!isMapReady || !map || !window.naver?.maps) return;
 
     const { LatLng, Marker, LatLngBounds } = window.naver.maps;
 
-    // 기존 검색 마커 제거
-    searchMarkersRef.current.forEach((marker) => marker.setMap(null));
+    searchMarkersRef.current.forEach((m) => m.setMap(null));
     searchMarkersRef.current = [];
 
-    if (searchResults && searchResults.length > 0) {
-      const bounds = new LatLngBounds();
+    if (!searchResults || searchResults.length === 0) return;
 
-      searchResults.forEach((item) => {
-        const latlng = new LatLng(item.y, item.x);
-        const marker = new Marker({
-          position: latlng,
-          map: map,
-          title: item.roadAddress || item.jibunAddress,
-        });
+    const bounds = new LatLngBounds();
 
-        searchMarkersRef.current.push(marker);
-        bounds.extend(latlng);
+    searchResults.forEach((item) => {
+      const lat = parseFloat(item.y);
+      const lng = parseFloat(item.x);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      const latlng = new LatLng(lat, lng);
+
+      const marker = new Marker({
+        position: latlng,
+        map,
+        title: item.roadAddress || item.jibunAddress || '',
       });
 
+      searchMarkersRef.current.push(marker);
+      bounds.extend(latlng);
+    });
+
+    if (searchMarkersRef.current.length > 0) {
       map.fitBounds(bounds);
     }
   }, [searchResults, isMapReady]);
 
-  // ======================================
-  // 4. 출발지 / 도착지 마커 표시
-  // ======================================
+  // --- 4. 출발/도착 마커 ---
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!isMapReady || !map || !window.naver?.maps) return;
 
     const { LatLng, Marker, Point } = window.naver.maps;
 
-    // 기존 출발/도착 마커 제거
-    originDestMarkersRef.current.forEach((marker) => marker.setMap(null));
+    originDestMarkersRef.current.forEach((m) => m.setMap(null));
     originDestMarkersRef.current = [];
 
-    // 출발지/도착지가 설정되면 검색 마커 숨김
     if ((routeData.origin || routeData.dest) && searchMarkersRef.current.length > 0) {
-      searchMarkersRef.current.forEach((marker) => marker.setMap(null));
+      searchMarkersRef.current.forEach((m) => m.setMap(null));
       searchMarkersRef.current = [];
     }
 
-    // 출발지
     if (routeData.origin && routeData.origin.length === 2) {
-      const originMarker = new Marker({
-        position: new LatLng(routeData.origin[0], routeData.origin[1]),
-        map: map,
-        title: '출발지',
-        icon: {
-          content:
-            '<div style="background:blue; width:15px; height:15px; border-radius:50%; border:2px solid white; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>',
-          anchor: new Point(7, 7),
-        },
-      });
-      originDestMarkersRef.current.push(originMarker);
+      const [lat, lng] = routeData.origin;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        const originMarker = new Marker({
+          position: new LatLng(lat, lng),
+          map,
+          title: '출발지',
+          icon: {
+            content:
+              '<div style="background:blue; width:15px; height:15px; border-radius:50%; border:2px solid white; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>',
+            anchor: new Point(7, 7),
+          },
+        });
+        originDestMarkersRef.current.push(originMarker);
+      }
     }
 
-    // 도착지
     if (routeData.dest && routeData.dest.length === 2) {
-      const destMarker = new Marker({
-        position: new LatLng(routeData.dest[0], routeData.dest[1]),
-        map: map,
-        title: '도착지',
-        icon: {
-          content:
-            '<div style="background:green; width:15px; height:15px; border-radius:50%; border:2px solid white; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>',
-          anchor: new Point(7, 7),
-        },
-      });
-      originDestMarkersRef.current.push(destMarker);
+      const [lat, lng] = routeData.dest;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        const destMarker = new Marker({
+          position: new LatLng(lat, lng),
+          map,
+          title: '도착지',
+          icon: {
+            content:
+              '<div style="background:green; width:15px; height:15px; border-radius:50%; border:2px solid white; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>',
+            anchor: new Point(7, 7),
+          },
+        });
+        originDestMarkersRef.current.push(destMarker);
+      }
     }
   }, [routeData, isMapReady]);
 
-  // ======================================
-  // 5. 추천 경로 Polyline 표시
-  // ======================================
+  // --- 5. 경로 Polyline: MultiLineString → 하나의 flat path 로 변환 ---
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!isMapReady || !map || !window.naver?.maps) return;
 
-    // route가 없으면 기존 경로 제거
-    if (!route) {
-      if (polylineRef.current) {
-        polylineRef.current.setMap(null);
-        polylineRef.current = null;
+    const { LatLng, Polyline, LatLngBounds } = window.naver.maps;
+
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+    if (!route || !route.geomJson) {
+      return;
+    }
+
+    console.log('[ROUTE DEBUG] raw geomJson:', route.geomJson);
+
+    let geojson;
+    try {
+      geojson =
+        typeof route.geomJson === 'string'
+          ? JSON.parse(route.geomJson)
+          : route.geomJson;
+    } catch (e) {
+      console.error('GeoJSON 파싱 오류:', e, route.geomJson);
+      return;
+    }
+
+    console.log('[ROUTE DEBUG] parsed geojson:', geojson);
+
+    const flatPath = [];
+
+    const addLineString = (coords) => {
+      if (!Array.isArray(coords)) return;
+
+      for (const c of coords) {
+        if (!Array.isArray(c) || c.length < 2) continue;
+        const lng = parseFloat(c[0]);
+        const lat = parseFloat(c[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+        const latlng = new LatLng(lat, lng);
+        if (
+          latlng &&
+          Number.isFinite(latlng.y) &&
+          Number.isFinite(latlng.x)
+        ) {
+          flatPath.push(latlng);
+        }
       }
+    };
+
+    if (geojson.type === 'LineString') {
+      addLineString(geojson.coordinates);
+    } else if (geojson.type === 'MultiLineString') {
+      geojson.coordinates.forEach((line) => addLineString(line));
+    } else if (
+      geojson.type === 'GeometryCollection' &&
+      Array.isArray(geojson.geometries)
+    ) {
+      geojson.geometries.forEach((g) => {
+        if (g.type === 'LineString') addLineString(g.coordinates);
+        else if (g.type === 'MultiLineString')
+          g.coordinates.forEach((line) => addLineString(line));
+      });
+    } else {
+      console.warn(
+        '[ROUTE DEBUG] 지원하지 않는 GeoJSON 타입:',
+        geojson.type
+      );
+    }
+
+    console.log(
+      '[ROUTE DEBUG] flatPath length:',
+      flatPath.length
+    );
+
+    if (flatPath.length < 2) {
+      console.warn('[ROUTE DEBUG] 유효한 경로 포인트가 부족함, polyline 생성 안 함');
       return;
     }
 
     try {
-      const { LatLng, Polyline } = window.naver.maps;
-      const geojson = JSON.parse(route.geomJson);
+      const polyline = new Polyline({
+        map,
+        path: flatPath,             // 👈 배열의 배열이 아니라, 단일 배열
+        strokeColor: '#007bff',
+        strokeOpacity: 0.8,
+        strokeWeight: 6,
+      });
 
-      // 기존 polyline 제거
-      if (polylineRef.current) {
-        polylineRef.current.setMap(null);
-      }
+      polylineRef.current = polyline;
 
-      if (geojson.type === 'LineString') {
-        // GeoJSON: [lng, lat] → LatLng: (lat, lng)
-        const path = geojson.coordinates.map(
-          (coord) => new LatLng(coord[1], coord[0])
-        );
-
-        const polyline = new Polyline({
-          map: map,
-          path: path,
-          strokeColor: '#007bff',
-          strokeOpacity: 0.8,
-          strokeWeight: 6,
-        });
-
-        polylineRef.current = polyline;
-        map.fitBounds(polyline.getBounds());
-      }
+      const bounds = new LatLngBounds();
+      flatPath.forEach((latlng) => bounds.extend(latlng));
+      map.fitBounds(bounds);
     } catch (e) {
-      console.error('GeoJSON 파싱 오류:', e);
+      console.error('[ROUTE DEBUG] Polyline 생성/그리기 중 오류:', e);
     }
 
     return () => {
@@ -216,9 +269,6 @@ const MapComponent = ({ route, userLocation, onMapClick, routeData, searchResult
     };
   }, [route, isMapReady]);
 
-  // ======================================
-  // 렌더링
-  // ======================================
   return (
     <div
       ref={mapRef}

@@ -1,3 +1,6 @@
+// server.js
+// CityRun Geo Engine - Loop route with optional crosswalk penalty
+
 const express = require("express");
 const { Pool } = require("pg");
 const cookieParser = require("cookie-parser");
@@ -7,216 +10,344 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
+// --- Redis (지금은 세션/캐시용, 로직에서 직접 쓰진 않음) ---
 const redis = new Redis({
   host: process.env.REDIS_HOST || "cityrun-redis",
   port: 6379,
 });
 
-// PostGIS DB 연결 풀
+// --- PostGIS / pgRouting 연결 ---
 const pool = new Pool({
-  user: "cjh",
-  host: "cityrun-postgis",
-  database: "osm_data",
-  password: "2323",
-  port: 5432,
+  user: process.env.PG_USER || "cjh",
+  host: process.env.PG_HOST || "cityrun-postgis",
+  database: process.env.PG_DB || "osm_data",
+  password: process.env.PG_PASSWORD || "2323",
+  port: Number(process.env.PG_PORT || 5432),
 });
 
-// 💡 횡단보도(crossing)에 해당하는 tag_id는 108입니다. (DB 확인 결과)
-const CROSSWALK_TAG_ID = 108;
+// --- 상수 설정 ---
+const CROSSWALK_PENALTY_M = 150.0; // crosswalk 1개당 100m 정도 페널티
+const CANDIDATE_VIA_LIMIT = 15; // 중간 지점 후보 개수
+// const VIA_DISTANCE_RATIO_MIN = 0.7; // 목표 거리의 절반 기준 하한
+// const VIA_DISTANCE_RATIO_MAX = 1.3; // 목표 거리의 절반 기준 상한
 
-/**
- * 💡 선호도(prefs)에 따라 pgRouting의 비용(cost) 계산 SQL을 동적으로 생성
- *    - length_m: 실제 길이(m)
- *    - cost / reverse_cost: 길이 + (횡단보도 패널티 등)
- *
- * ⚠️ 주의: ways 테이블의 PK는 gid 이므로,
- *         pgr_* 함수에서 요구하는 id 컬럼을 위해 gid AS id 로 alias 한다.
- */
-const buildEdgesSql = (prefs) => {
-  const avoidCrosswalks = prefs?.minimizeCrosswalks;
+// --- Edge SQL Builder ---
+// 1) 순수 거리 기반 (driving distance용)
+const buildDistanceEdgeSql = () => `
+  SELECT
+    gid AS id,
+    source,
+    target,
+    length_m AS cost,
+    length_m AS reverse_cost
+  FROM ways
+`;
 
-  let cost = "cost";
-  let reverse_cost = "reverse_cost";
-
-  // 횡단보도 회피: tag_id가 108(crossing)일 경우 비용을 대폭 증가
-  if (avoidCrosswalks) {
-    const crosswalkPenalty = `CASE WHEN tag_id = ${CROSSWALK_TAG_ID} THEN 1000.0 ELSE 0.0 END`;
-    cost += ` + ${crosswalkPenalty}`;
-    reverse_cost += ` + ${crosswalkPenalty}`;
+// 2) 경로 선택용 (횡단보도 패널티 적용 가능)
+const buildRouteEdgeSql = (avoidCrosswalks) => {
+  if (!avoidCrosswalks) {
+    // 패널티 없이 순수 거리 기준
+    return `
+      SELECT
+        gid AS id,
+        source,
+        target,
+        length_m AS cost,
+        length_m AS reverse_cost
+      FROM ways
+    `;
   }
 
+  // 횡단보도 패널티 적용
   return `
-    SELECT 
-      gid AS id,      -- 💡 gid을 id로 alias
-      source, 
-      target, 
-      ${cost} AS cost,
-      ${reverse_cost} AS reverse_cost,
-      length_m,
-      tag_id
-    FROM ways
+    SELECT
+      w.gid AS id,
+      w.source,
+      w.target,
+      (w.length_m + COALESCE(wc.cross_count, 0) * ${CROSSWALK_PENALTY_M}) AS cost,
+      (w.length_m + COALESCE(wc.cross_count, 0) * ${CROSSWALK_PENALTY_M}) AS reverse_cost
+    FROM ways w
+    LEFT JOIN ways_crosswalks wc
+      ON wc.edge_id = w.gid
   `;
 };
 
-/**
- * 💡 OSM/PostGIS 기반 커스텀 경로 탐색
- *    - 목표 거리(km)에 근접한 왕복(there & back) 경로 생성
- *    - 선호도에 따라 횡단보도 회피 (cost에 패널티 반영)
- */
+// --- 루프 경로 (start → via → start) 한 번 계산하는 헬퍼 ---
+async function computeLoopRoute(
+  pool,
+  startNodeId,
+  viaNodeId,
+  targetDistanceM,
+  avoidCrosswalks
+) {
+  const routeEdgeSql = buildRouteEdgeSql(avoidCrosswalks);
+  const safeRouteEdgeSql = routeEdgeSql.replace(/'/g, "''");
+
+  const loopSql = `
+    WITH
+      out_path AS (
+        SELECT * FROM pgr_dijkstra(
+          '${safeRouteEdgeSql}'::text,
+          $1::bigint,
+          $2::bigint,
+          false
+        )
+      ),
+      back_path AS (
+        SELECT * FROM pgr_dijkstra(
+          '${safeRouteEdgeSql}'::text,
+          $2::bigint,
+          $1::bigint,
+          false
+        )
+      ),
+      all_edges AS (
+        SELECT edge FROM out_path WHERE edge <> -1
+        UNION ALL
+        SELECT edge FROM back_path WHERE edge <> -1
+      ),
+      joined AS (
+        SELECT
+          w.gid,
+          w.length_m,
+          COALESCE(wc.cross_count, 0) AS cross_count,
+          w.the_geom
+        FROM ways w
+        JOIN all_edges e ON e.edge = w.gid
+        LEFT JOIN ways_crosswalks wc
+          ON wc.edge_id = w.gid
+      )
+    SELECT
+      SUM(length_m)        AS total_distance_m,
+      SUM(cross_count)     AS total_crosswalks,
+      ST_AsGeoJSON(
+        ST_Collect(the_geom)
+      )                    AS geomjson
+    FROM joined;
+  `;
+
+  const { rows } = await pool.query(loopSql, [startNodeId, viaNodeId]);
+
+  if (!rows || rows.length === 0 || !rows[0].geomjson) {
+    return null;
+  }
+
+  const row = rows[0];
+  const totalDistanceM = Number(row.total_distance_m || 0);
+  const totalCrosswalks = Number(row.total_crosswalks || 0);
+  const geomJson = row.geomjson;
+
+  if (totalDistanceM <= 0) {
+    return null;
+  }
+
+  const distanceError = Math.abs(totalDistanceM - targetDistanceM);
+
+  let score;
+  if (avoidCrosswalks) {
+    const LAMBDA = 200.0; // crossing 1개를 "약 200m 거리 오차"로 본다
+    score = distanceError + totalCrosswalks * LAMBDA;
+  } else {
+    score = distanceError; // 기본 모드: 거리만 맞추는 게 최우선
+  }
+
+  return {
+    totalDistanceM,
+    totalCrosswalks,
+    geomJson,
+    score,
+  };
+}
+
+// --- 메인 엔드포인트: /score-route ---
+// 입력: { distanceKm, origin: [lat, lng], prefs: { minimizeCrosswalks: bool, ... } }
 app.post("/score-route", async (req, res) => {
   const { distanceKm, origin, prefs } = req.body || {};
 
-  // 💡 유효성 검사
+  // 입력 값 검증
   if (
     !Array.isArray(origin) ||
     origin.length !== 2 ||
     typeof distanceKm !== "number" ||
     distanceKm <= 0
   ) {
-    console.error(
-      `Validation Failed: Received Body: ${JSON.stringify(req.body)}`
-    );
+    console.error("[/score-route] Invalid body:", req.body);
     return res.status(400).json({
       error:
-        "Invalid input: origin must be [lat, lng] array, distanceKm must be positive number.",
+        "Invalid input: origin must be [lat, lng], distanceKm must be positive number.",
     });
   }
 
   const startLat = origin[0];
   const startLng = origin[1];
   const targetDistanceM = distanceKm * 1000;
+  const halfDistanceM = targetDistanceM / 2;
+
+  const avoidCrosswalks = !!(prefs && prefs.minimizeCrosswalks);
+
+  console.log(
+    `[/score-route] origin=(${startLat}, ${startLng}), target=${targetDistanceM}m, prefs=${JSON.stringify(
+      prefs || {}
+    )}, avoidCrosswalks=${avoidCrosswalks}`
+  );
 
   try {
-    // 1. 출발지에서 가장 가까운 OSM 도로망 정점(Vertex) 찾기
-    //    ways_vertices_pgr.the_geom 의 SRID = 4326
+    // 1) 출발지에 가장 가까운 Vertex 찾기
     const findStartNodeSql = `
       SELECT id
-      FROM ways_vertices_pgr 
+      FROM ways_vertices_pgr
       ORDER BY the_geom <-> ST_SetSRID(ST_MakePoint($1, $2), 4326)
       LIMIT 1;
     `;
     const startNodeResult = await pool.query(findStartNodeSql, [
-      startLng, // x = lon
-      startLat, // y = lat
+      startLng,
+      startLat,
     ]);
 
-    if (startNodeResult.rows.length === 0) {
+    if (!startNodeResult.rows.length) {
       return res
         .status(400)
         .json({ error: "출발지 근처의 경로 탐색용 노드를 찾을 수 없습니다." });
     }
-    const startNodeId = startNodeResult.rows[0].id;
 
-    // 2. 선호도 기반 동적 edges SQL 생성
-    const edgesSql = buildEdgesSql(prefs);
-    const escapedEdgesSql = edgesSql.replace(/'/g, "''"); // pgr_*에 넣을 때 escape
+    const startNodeId = Number(startNodeResult.rows[0].id);
+    console.log(`[/score-route] startNodeId = ${startNodeId}`);
 
-    // 3. pgr_drivingDistance로 "목표 거리 이내에서 도달 가능한 노드"를 구하고,
-    //    그 중 가장 멀리 있는 노드를 목적지 후보로 선택
-    const roundTripQuery = `
+    // 2) pgr_drivingdistance 로 "목표 거리의 절반 근처" 후보 노드 찾기
+    const distanceEdgeSql = buildDistanceEdgeSql();
+    const safeDistanceEdgeSql = distanceEdgeSql.replace(/'/g, "''");
+
+    const drivingSql = `
       WITH dd AS (
-        SELECT *
-        FROM pgr_drivingDistance(
-          '${escapedEdgesSql}',
-          ARRAY[${startNodeId}]::bigint[],
-          ${targetDistanceM}::float8,
-          false,   -- 무방향 그래프 (양방향 도로)
-          false    -- equicost = false
+        SELECT * FROM pgr_drivingdistance(
+          '${safeDistanceEdgeSql}'::text,
+          $1::bigint,
+          $2::double precision,
+          false
         )
-      ),
-      dest AS (
-        SELECT node AS dest_vid, agg_cost
-        FROM dd
-        WHERE node <> ${startNodeId}
-        ORDER BY agg_cost DESC
-        LIMIT 1
-      ),
-      forward_path AS (
-        SELECT *
-        FROM pgr_dijkstra(
-          '${escapedEdgesSql}',
-          ${startNodeId},
-          (SELECT dest_vid FROM dest)
-        )
-      ),
-      backward_path AS (
-        SELECT *
-        FROM pgr_dijkstra(
-          '${escapedEdgesSql}',
-          (SELECT dest_vid FROM dest),
-          ${startNodeId}
-        )
-      ),
-      all_edges AS (
-        SELECT edge
-        FROM forward_path
-        WHERE edge <> -1
-        UNION ALL
-        SELECT edge
-        FROM backward_path
-        WHERE edge <> -1
-      ),
-      loop_geom AS (
-        SELECT 
-          w.the_geom,
-          w.length_m,
-          w.tag_id
-        FROM all_edges a
-        JOIN ways w ON a.edge = w.gid   -- 💡 여기서도 gid로 JOIN
       )
-      SELECT 
-        ST_AsGeoJSON(
-          ST_Collect(
-            ST_Transform(lg.the_geom, 4326)
-          )
-        ) AS geomJson,
-        SUM(lg.length_m) AS totalDistanceM,
-        COUNT(CASE WHEN lg.tag_id = ${CROSSWALK_TAG_ID} THEN 1 END) AS totalCrosswalks
-      FROM loop_geom lg;
+      SELECT DISTINCT
+        node,
+        agg_cost,
+        ABS(agg_cost - $2) AS orderCost
+      FROM dd
+      ORDER BY orderCost
+      LIMIT ${CANDIDATE_VIA_LIMIT};
     `;
 
-    const loopResult = await pool.query(roundTripQuery);
-    if (loopResult.rows.length === 0 || !loopResult.rows[0].geomjson) {
+    const drivingResult = await pool.query(drivingSql, [
+      startNodeId,
+      halfDistanceM, // $2: halfDistanceM
+    ]);
+
+    if (!drivingResult.rows.length) {
+      console.warn("[/score-route] via candidates not found");
       return res.status(404).json({
-        error: `목표 거리(${distanceKm}km)에 맞는 경로를 생성하지 못했습니다.`,
+        error: `목표 거리(${distanceKm}km)에 맞는 중간 지점 후보를 찾지 못했습니다.`,
       });
     }
 
-    const route = loopResult.rows[0];
+    const viaCandidates = drivingResult.rows.map((r) => ({
+      nodeId: Number(r.node),
+      aggCost: Number(r.agg_cost),
+    }));
 
-    // 4. 최종 응답 데이터 구성
+    console.log(
+      "[/score-route] candidate via nodes:",
+      viaCandidates.map((c) => `node=${c.nodeId}, agg=${c.aggCost.toFixed(1)}`)
+    );
+
+    // 3) 각 via 후보에 대해 start → via → start 루프 계산 후, 가장 좋은 후보 선택
+    let best = null;
+
+    for (const candidate of viaCandidates) {
+      const viaNodeId = candidate.nodeId;
+      try {
+        const loopRoute = await computeLoopRoute(
+          pool,
+          startNodeId,
+          viaNodeId,
+          targetDistanceM,
+          avoidCrosswalks
+        );
+        if (!loopRoute) {
+          continue;
+        }
+
+        const { totalDistanceM, totalCrosswalks, geomJson, score } = loopRoute;
+        console.log(
+          `[/score-route] via=${viaNodeId} loop: dist=${totalDistanceM.toFixed(
+            1
+          )}, crosswalks=${totalCrosswalks}, score=${score.toFixed(4)}`
+        );
+
+        if (!best || score < best.score) {
+          best = {
+            viaNodeId,
+            totalDistanceM,
+            totalCrosswalks,
+            geomJson,
+            score,
+          };
+        }
+      } catch (e) {
+        console.error(
+          `[/score-route] error computing loop via=${viaNodeId}:`,
+          e
+        );
+      }
+    }
+
+    if (!best) {
+      return res.status(404).json({
+        error: `목표 거리(${distanceKm}km)에 맞는 루프 코스를 생성하지 못했습니다.`,
+      });
+    }
+
+    // 4) 최종 결과 조립
     const finalRoute = {
-      distanceM: Math.round(route.totaldistancem),
-      uphillM: 0,
-      crosswalkCount: parseInt(route.totalcrosswalks || 0, 10),
-      finalScore: 80,
-      nightScore: 70,
-      crowdScore: 60,
-      name: `OSM 커스텀 경로 (${distanceKm}km)`,
-      geomJson: route.geomjson,
+      distanceM: Math.round(best.totalDistanceM),
+      uphillM: 0, // 아직 고도 데이터는 사용 안 함
+      crosswalkCount: best.totalCrosswalks,
+      finalScore: Math.max(
+        0,
+        100 -
+          (Math.abs(best.totalDistanceM - targetDistanceM) / targetDistanceM) *
+            50 -
+          best.totalCrosswalks * 1
+      ), // 대략적인 점수
+      nightScore: 70, // TODO: 밤 안전 점수 (추후 개선)
+      crowdScore: 60, // TODO: 혼잡도 점수 (추후 개선)
+      name: `루프 코스 (${distanceKm.toFixed(1)}km 목표)`,
+      geomJson: best.geomJson,
       originLat: startLat,
       originLng: startLng,
-      destLat: startLat, // 왕복 후 다시 출발점으로 돌아오는 루프
+      destLat: startLat, // 루프라서 출발지=도착지
       destLng: startLng,
     };
 
     res.json({
       route: finalRoute,
-      message: `PostGIS pgr_drivingDistance + pgr_dijkstra (startNode: ${startNodeId})`,
+      message: `Loop route from node ${startNodeId} via node ${best.viaNodeId}`,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("PostGIS Query Error:", err);
+    console.error("PostGIS Loop Route Error:", err);
     res
       .status(500)
-      .json({ error: "PostGIS 경로 탐색 실패", details: err.message });
+      .json({ error: "PostGIS 루프 경로 탐색 실패", details: err.message });
   }
 });
 
-app.get("/health", (req, res) => res.json({ status: "OK" }));
-
-app.listen(3000, () =>
-  console.log(
-    "Geo-engine (OSM/PostGIS - Prefs: Crosswalk) running on port 3000"
-  )
+// 헬스체크
+app.get("/health", (req, res) =>
+  res.json({ status: "OK", timestamp: new Date().toISOString() })
 );
+
+// 서버 시작
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(
+    `Geo-engine (OSM/PostGIS - Loop route with crosswalk penalty) running on port ${PORT}`
+  );
+});
