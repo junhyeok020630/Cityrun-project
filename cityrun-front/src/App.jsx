@@ -513,15 +513,16 @@ function App() {
         />
       ) : (
         <>
-          {runState !== 'running' && userLocation && (
-            <SosButton userId={currentUser.id} userLocation={userLocation} />
-          )}
-          
           <main style={{
             ...styles.mainContent,
-            padding: runState === 'setup' ? '20px' : '0',
-            overflowY: 'hidden', 
-            height: runState !== 'setup' ? 'auto' : '100%',
+            // 🔻🔻🔻 (핵심 수정) 🔻🔻🔻
+            // 'setup' 상태일 때 무조건 20px을 주던 것을
+            // 'home' 뷰이면서 'setup' 상태일 때만 20px을 주도록 변경합니다.
+            padding: view === 'home' && runState === 'setup' ? '20px' : '0',
+            // (참고) 🔻 아래 두 줄은 styles.mainContent에 이미 있으므로 제거해도 됩니다.
+            // overflowY: 'hidden', 
+            // height: runState !== 'setup' ? 'auto' : '100%',
+            // 🔺🔺🔺 (핵심 수정) 🔺🔺🔺
           }}>
             {renderView()}
           </main>
@@ -573,7 +574,8 @@ function App() {
 const styles = {
   mobileContainer: {
     maxWidth: '500px', 
-    minHeight: '100vh', 
+    height: '98vh', // ⬅️ 'minHeight'에서 'height'로 변경
+    overflow: 'hidden', // ⬅️ (추가) 컨테이너 자체 스크롤 방지
     margin: '0 auto',
     border: '1px solid #ddd',
     display: 'flex',
@@ -581,12 +583,13 @@ const styles = {
     position: 'relative',
     backgroundColor: '#ffffff',
   },
+  // 🔺🔺🔺 (핵심 수정) 🔺🔺🔺
   mainContent: {
     flex: 1,
     position: 'relative', 
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden', // 🔻🔻🔻 (항목 2) 스크롤 방지 🔻🔻🔻
+    overflow: 'hidden', // ⬅️ 이 속성이 자식(ActivityPage)의 100% 높이 기준이 됩니다.
   },
   loadingText: {
     fontSize: '18px',

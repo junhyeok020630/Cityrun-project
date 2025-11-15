@@ -46,9 +46,7 @@ const SettingsModal = ({ routeData, setRouteData, onClose }) => {
                   }))
                 }
               />
-              {key === 'avoidUphill' && ' 경사 회피'}
               {key === 'minimizeCrosswalks' && ' 횡단보도 최소화'}
-              {key === 'avoidCrowd' && ' 혼잡 회피'}
             </label>
           ))}
         </div>

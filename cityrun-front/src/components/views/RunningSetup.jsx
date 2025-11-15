@@ -24,6 +24,7 @@ const RunningSetup = (props) => {
         <p style={styles.notice}>
           ⚠️ 현재 이 웹 서비스는 <strong>프로토타입</strong>이며,{' '}
           <strong>서울 시내에서만</strong> 테스트 가능합니다.
+          (알고리즘 확인 최적화 데이터 : 롯데월드, 롯데월드에서 횡단보도 회피 기능을 껐다 켜가며 테스트)
         </p>
 
         <div style={styles.miniMapContainer}>
