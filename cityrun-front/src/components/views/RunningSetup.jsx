@@ -104,18 +104,6 @@ const RunningSetup = (props) => {
             </button>
           )}
         </div>
-
-        {/* API 상태 */}
-        <p style={styles.status}>
-          API 상태:{' '}
-          {loading ? (
-            '요청 중...'
-          ) : error ? (
-            <span style={{ color: 'red' }}>오류: {error}</span>
-          ) : (
-            '준비 완료'
-          )}
-        </p>
       </div>
     </div>
   );

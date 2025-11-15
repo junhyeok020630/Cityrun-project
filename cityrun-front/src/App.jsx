@@ -55,9 +55,7 @@ function App() {
     distanceKm: 5.0,
     origin: null,
     prefs: {
-      avoidUphill: true,
       minimizeCrosswalks: true,
-      avoidCrowd: true,
     },
   });
   const [recommendedRoute, setRecommendedRoute] = useState(null);
