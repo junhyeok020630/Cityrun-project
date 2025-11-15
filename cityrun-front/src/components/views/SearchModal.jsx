@@ -8,12 +8,17 @@ const SearchModal = (props) => {
     onSetOrigin, onClose
   } = props;
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      onSearch();
+    }
+  };
+
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
       <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
         <h3>출발지 검색</h3>
-        
-        {/* (항목 1) 기존 검색 바 UI */}
+
         <div style={styles.searchBar}>
           <input
             type="text"
@@ -21,7 +26,7 @@ const SearchModal = (props) => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={styles.searchInput}
-            onKeyDown={(e) => e.key === 'Enter' && onSearch()}
+            onKeyDown={handleKeyDown}
           />
           <button
             onClick={onSearch}
@@ -31,14 +36,12 @@ const SearchModal = (props) => {
           </button>
         </div>
 
-        {/* (항목 1) 기존 검색 결과 UI */}
-        {searchResults.length > 0 && (
-          <SearchResultPanel
-            results={searchResults}
-            onSetOrigin={onSetOrigin}
-          />
-        )}
-        
+        {/* 검색 결과 패널은 항상 표시하되, 패널 내부에서 '결과 없음' 처리 */}
+        <SearchResultPanel
+          results={searchResults}
+          onSetOrigin={onSetOrigin}
+        />
+
         <button onClick={onClose} style={styles.closeButton}>
           닫기
         </button>
@@ -57,7 +60,7 @@ const styles = {
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     display: 'flex',
     justifyContent: 'center',
-    alignItems: 'flex-start', // 모달을 상단에 배치
+    alignItems: 'flex-start',
     paddingTop: '50px',
     zIndex: 1000,
   },
@@ -88,7 +91,7 @@ const styles = {
   },
   closeButton: {
     padding: '10px 15px',
-    backgroundColor: '#6c757d', // 회색
+    backgroundColor: '#6c757d',
     color: 'white',
     border: 'none',
     borderRadius: '5px',

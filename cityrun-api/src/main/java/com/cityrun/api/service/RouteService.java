@@ -2,6 +2,7 @@ package com.cityrun.api.service;
 
 import com.cityrun.api.model.dto.RecommendRequest;
 import com.cityrun.api.model.dto.RouteCreateRequest;
+import com.cityrun.api.model.dto.RouteUpdateRequest; // 🔻 1. import 추가
 import com.cityrun.api.entity.Route;
 import com.cityrun.api.repository.RouteRepository;
 import lombok.RequiredArgsConstructor;
@@ -11,10 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.core.ParameterizedTypeReference;
 
-// 🔻🔻🔻 1. 필요한 클래스 임포트 🔻🔻🔻
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-// 🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺
 
 import java.util.List;
 import java.util.Map;
@@ -28,13 +27,11 @@ public class RouteService {
     @Qualifier("geoWebClient")
     private final WebClient geoWebClient;
 
-    // 🔻🔻🔻 2. JSON 파싱을 위한 ObjectMapper 필드 추가 🔻🔻🔻
     private final ObjectMapper objectMapper = new ObjectMapper();
-    // 🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺
 
     @Transactional
     public Route createRoute(Long userId, RouteCreateRequest req) {
-        // ... (기존 코드 동일)
+        // ... (기존 createRoute 코드)
         Route r = Route.builder()
                 .userId(userId)
                 .name(req.getName())
@@ -44,7 +41,6 @@ public class RouteService {
                 .destLng(req.getDest() != null ? req.getDest()[1] : null)
                 .distanceM(req.getDistanceM())
                 .finalScore(req.getFinalScore())
-                // 💡 OSM 엔진이 계산한 커스텀 점수
                 .uphillM(req.getUphillM())
                 .crosswalkCount(req.getCrosswalkCount())
                 .nightScore(req.getNightScore())
@@ -60,62 +56,76 @@ public class RouteService {
         return routeRepo.findByUserIdOrderByIdDesc(userId);
     }
 
-    // 🔻🔻🔻 3. recommendRoute 메서드 수정 (try-catch 강화) 🔻🔻🔻
+    // 🔻 2. 경로 이름 수정 메서드 추가 🔻
+    @Transactional
+    public Route updateRouteName(Long userId, Long routeId, RouteUpdateRequest req) {
+        // 1. 경로를 찾음
+        Route route = routeRepo.findById(routeId)
+                .orElseThrow(() -> new IllegalArgumentException("경로를 찾을 수 없습니다. id=" + routeId));
+
+        // 2. 사용자 ID가 일치하는지 확인 (본인만 수정 가능)
+        if (!route.getUserId().equals(userId)) {
+            throw new IllegalStateException("이 경로를 수정할 권한이 없습니다.");
+        }
+
+        // 3. 이름 업데이트
+        if (req.getName() != null && !req.getName().isBlank()) {
+            route.setName(req.getName());
+        }
+
+        return routeRepo.save(route);
+    }
+
+    // 🔻 3. 경로 삭제 메서드 추가 🔻
+    @Transactional
+    public void deleteRoute(Long userId, Long routeId) {
+        // 1. 경로를 찾음
+        Route route = routeRepo.findById(routeId)
+                .orElseThrow(() -> new IllegalArgumentException("경로를 찾을 수 없습니다. id=" + routeId));
+
+        // 2. 사용자 ID가 일치하는지 확인 (본인만 삭제 가능)
+        if (!route.getUserId().equals(userId)) {
+            throw new IllegalStateException("이 경로를 삭제할 권한이 없습니다.");
+        }
+
+        // 3. 삭제
+        routeRepo.delete(route);
+    }
+    // 🔺🔺🔺
+
     @Transactional(readOnly = true)
     public Map<String, Object> recommendRoute(RecommendRequest req) {
-
+        // ... (기존 recommendRoute 코드)
         ParameterizedTypeReference<Map<String, Object>> typeRef = new ParameterizedTypeReference<>() {
         };
-
         try {
             Map<String, Object> geoResponse = geoWebClient.post()
                     .uri("/score-route")
                     .bodyValue(req)
                     .retrieve()
                     .bodyToMono(typeRef)
-                    .block(); // ⬅️ 4xx/5xx 에러 발생 시 여기서 예외가 터짐
-
+                    .block();
             if (geoResponse == null || !geoResponse.containsKey("route")) {
                 throw new RuntimeException("Geo 엔진 응답이 유효하지 않습니다.");
             }
-
-            // 4. Geo 엔진이 생성한 경로를 프론트엔드로 반환
             @SuppressWarnings("unchecked")
             Map<String, Object> recommendedRoute = (Map<String, Object>) geoResponse.get("route");
-
             return recommendedRoute;
-
         } catch (WebClientResponseException.BadRequest | WebClientResponseException.NotFound e) {
-            // ⬅️ 400(이상치)과 404(경로 없음)를 모두 잡음
-
             String errorBody = e.getResponseBodyAsString();
-            // 💡 사용자에게 보여줄 기본(fallback) 메시지
             String userMessage = "경로를 찾을 수 없습니다. 출발지를 다시 설정해주세요.";
-
-            // 1. cityrun-geo가 보낸 에러 응답이 우리가 예상한 JSON 형태인지 확인
             if (errorBody != null && !errorBody.isBlank() && errorBody.contains("\"errorCode\"")) {
                 try {
-                    // 2. JSON 파싱 시도
                     @SuppressWarnings("unchecked")
                     Map<String, Object> errorMap = objectMapper.readValue(errorBody, Map.class);
-                    // 3. JSON 안의 "error" 메시지를 사용
                     userMessage = (String) errorMap.getOrDefault("error", userMessage);
-
                 } catch (Exception parseEx) {
-                    // 4. 파싱 실패 시, 콘솔에만 로그 남기고 기본 메시지(userMessage) 사용
                     System.err.println("Geo-engine 4xx JSON 파싱 실패: " + parseEx.getMessage());
                 }
             } else {
-                // 5. 404가 플레인 텍스트를 보냈거나, 400이 HTML을 보낸 경우
                 System.err.println("Geo-engine 4xx 응답이 JSON이 아님: " + errorBody);
             }
-
-            // 6. RestExceptionHandler가 400으로 처리할 수 있도록,
-            // 항상 사용자 친화적인 메시지(userMessage)로 예외 발생
             throw new IllegalArgumentException(userMessage);
-
         }
-        // (참고: 그 외 5xx 같은 에러는 GlobalExceptionHandler가 500으로 처리)
     }
-    // 🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺
 }

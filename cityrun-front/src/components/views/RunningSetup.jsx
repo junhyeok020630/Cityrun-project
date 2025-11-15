@@ -19,7 +19,7 @@ const RunningSetup = (props) => {
       
       {/* --- 상단 영역 (지도, 정보) --- */}
       <div style={styles.topSection}>
-        <h2>🏃 Gachon City RUN</h2>
+        <h2>Gachon City RUN</h2>
         
         <p style={styles.notice}>
           ⚠️ 현재 이 웹 서비스는 <strong>프로토타입</strong>이며,{' '}
@@ -54,16 +54,27 @@ const RunningSetup = (props) => {
       </div>
 
       {/* --- 하단 컨트롤 영역 --- */}
+      {/* --- 하단 컨트롤 영역 --- */}
       <div style={styles.controlsSection}>
 
-        {/* (항목 1-3) 경로 재추천 버튼 (경로 추천 시에만 노출) */}
+        {/* 🔻🔻🔻 (항목 1) (수정) 재추천 버튼 또는 출발지 안내 텍스트 🔻🔻🔻 */}
         <div style={styles.redoButtonContainer}>
-          {recommendedRoute && !loading && (
+          {loading ? null : recommendedRoute ? (
+            // (A) 추천 경로가 있으면: 재추천 버튼 표시
             <button onClick={onRecommend} style={styles.redoButton}>
               ↻
             </button>
+          ) : !routeData.origin ? (
+            // (B) 추천 경로가 없고, 출발지도 없으면: 안내 문구 표시
+            <span style={styles.instructionText}>
+              출발지 설정이 필요합니다.
+            </span>
+          ) : (
+            // (C) 출발지만 있으면: 빈 공간 유지 (경로 추천 버튼이 있으므로)
+            null 
           )}
         </div>
+        {/* 🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺🔺 */}
 
         {/* (항목 1-1, 1-2) 메인 컨트롤 버튼 (설정, 시작, 검색) */}
         <div style={styles.mainControls}>
@@ -137,7 +148,7 @@ const styles = {
     color: '#8c6d1f',
   },
   miniMapContainer: {
-    height: '400px', // (항목 1) 지도를 더 작게
+    height: '250px', // (항목 1) 지도를 더 작게
     width: '100%',
     border: '1px solid #eee',
     borderRadius: '8px',

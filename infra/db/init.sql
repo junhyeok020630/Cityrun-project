@@ -30,3 +30,16 @@ CREATE TABLE IF NOT EXISTS emergency_requests (
   status ENUM('SENT','ACK','RESOLVED') DEFAULT 'SENT',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS user_activities (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  distance_m INT NOT NULL,         -- 총 달린 거리 (미터)
+  duration_s INT NOT NULL,         -- 총 운동 시간 (초)
+  avg_pace_s_per_km INT,           -- 평균 페이스 (km당 초)
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 운동 완료 시간
+  
+  INDEX idx_activities_user (user_id),
+  CONSTRAINT fk_activities_user FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
