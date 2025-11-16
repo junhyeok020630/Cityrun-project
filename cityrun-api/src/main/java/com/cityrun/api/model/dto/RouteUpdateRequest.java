@@ -1,9 +1,17 @@
+// '경로 정보 수정' API (/api/routes/{id})의 Request Body DTO
 package com.cityrun.api.model.dto;
 
 import lombok.Data;
 
+/**
+ * @Data
+ *       Lombok
+ *       어노테이션: @Getter, @Setter, @ToString, @EqualsAndHashCode, @RequiredArgsConstructor
+ *       자동 생성
+ */
 @Data
 public class RouteUpdateRequest {
-    // 널이 아니거나 비어있지 않은 이름만 허용 (필요시 @NotBlank 추가)
+
+    // 수정할 새로운 경로 이름
     private String name;
 }

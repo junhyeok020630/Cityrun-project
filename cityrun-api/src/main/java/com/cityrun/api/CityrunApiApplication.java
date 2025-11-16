@@ -1,3 +1,5 @@
+// 'cityrun-api' (Spring Boot) 애플리케이션의 메인 클래스 및 실행 진입점
+
 package com.cityrun.api;
 
 import org.springframework.boot.SpringApplication;

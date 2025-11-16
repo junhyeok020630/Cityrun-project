@@ -1,16 +1,17 @@
+// 'plugins' 블록: 프로젝트에 사용할 Gradle 플러그인 정의
 plugins {
-	id 'java'
-	id 'org.springframework.boot' version '3.5.7'
-	id 'io.spring.dependency-management' version '1.1.7'
+	id 'java' // Java 프로젝트 명시
+	id 'org.springframework.boot' version '3.5.7' // Spring Boot 플러그인 (bootJar 태스크 등 제공)
+	id 'io.spring.dependency-management' version '1.1.7' // Spring 의존성 관리 플러그인 (라이브러리 버전 관리 자동화)
 }
 
-group = 'com.cityrun'
-version = '0.0.1-SNAPSHOT'
-description = 'cityrunHelpWeb'
+group = 'com.cityrun' // 프로젝트 그룹 ID
+version = '0.0.1-SNAPSHOT' // 프로젝트 버전
+description = 'cityrunHelpWeb' // 프로젝트 설명
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
+		languageVersion = JavaLanguageVersion.of(17) // Java 17 버전 사용 설정
 	}
 }
 
@@ -21,27 +22,35 @@ configurations {
 }
 
 repositories {
-	mavenCentral()
+	mavenCentral() // 의존성 다운로드 저장소 (Maven Central)
 }
 
+// 'dependencies' 블록: 프로젝트 필요 라이브러리 정의
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-webflux'   // WebClient
-    implementation 'io.projectreactor.netty:reactor-netty-http'             // 💡 TMAP SSL Fix 필수 종속성
-    implementation 'org.springframework.boot:spring-boot-starter-validation' // Validation 복구
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
-    implementation 'org.springframework.session:spring-session-data-redis'  // 세션공유(선택)
-    implementation 'org.springframework.security:spring-security-crypto'    // BCrypt
-    implementation 'com.fasterxml.jackson.core:jackson-databind' // TMAP JSON 파싱용 (명시적 포함)
-    runtimeOnly  'com.mysql:mysql-connector-j:9.1.0'
+    // --- Spring Boot 스타터 ---
+    implementation 'org.springframework.boot:spring-boot-starter-web' // Spring MVC, Tomcat 포함 웹 스타터
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'   // 비동기 WebClient 사용
+    implementation 'io.projectreactor.netty:reactor-netty-http'             // WebClient SSL/TLS 처리 종속성
+    implementation 'org.springframework.boot:spring-boot-starter-validation' // @Valid 유효성 검사
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa' // JPA(Java Persistence API) 스타터
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis' // Spring Data Redis 스타터
+    
+    // --- 세션 및 보안 ---
+    implementation 'org.springframework.session:spring-session-data-redis'  // Redis 기반 세션 공유 (과제 '세션 공유' 요건)
+    implementation 'org.springframework.security:spring-security-crypto'    // BCryptPasswordEncoder (비밀번호 암호화)
+   
+    // --- 데이터베이스 ---
+    implementation 'com.fasterxml.jackson.core:jackson-databind' // JSON 파싱용 (Spring Web에 포함되나 명시)
+    runtimeOnly  'com.mysql:mysql-connector-j:9.1.0' // MySQL 8+ JDBC 드라이버 (런타임 전용)
 
-    compileOnly 'org.projectlombok:lombok'
-    annotationProcessor 'org.projectlombok:lombok'
+    // --- 유틸리티 ---
+    compileOnly 'org.projectlombok:lombok' // @Data, @Getter 등 Lombok (컴파일 전용)
+    annotationProcessor 'org.projectlombok:lombok' // Lombok 어노테이션 프로세서
 
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'  // 테스트
+    // --- 테스트 ---
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'  // JUnit, Mockito 등 테스트 스타터
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform() // 테스트 시 JUnit 5 플랫폼 사용
 }
