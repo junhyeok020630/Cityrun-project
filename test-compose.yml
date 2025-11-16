@@ -1,0 +1,89 @@
+# test-compose.yml: PostGIS 이미지를 Docker Hub에서 가져와 전체 시스템을 테스트하는 파일
+version: "3.8"
+
+services:
+  # (1) 리버스 프록시 (Nginx)
+  cityrun-proxy:
+    image: nginx:latest
+    container_name: cityrun-proxy
+    ports:
+      - "80:80" # HTTP (리다이렉트용)
+      - "443:443" # HTTPS (메인 서비스)
+    volumes:
+      # Nginx 설정 파일 마운트
+      - ./infra/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      # SSL 인증서 파일 마운트
+      - ./infra/certs/cityrun.crt:/etc/nginx/certs/cityrun.crt:ro
+      - ./infra/certs/cityrun.key:/etc/nginx/certs/cityrun.key:ro
+    depends_on:
+      - cityrun-front
+      - cityrun-api
+    restart: always
+
+  # (2) 프론트엔드 (React + Nginx) - 로컬 빌드
+  cityrun-front:
+    build:
+      context: ./cityrun-front
+      dockerfile: Dockerfile
+    container_name: cityrun-front
+    restart: always
+
+  # (3) 메인 API 서버 (Spring Boot) - 로컬 빌드
+  cityrun-api:
+    build:
+      context: ./cityrun-api
+      dockerfile: Dockerfile
+    container_name: cityrun-api
+    depends_on:
+      - cityrun-db
+      - cityrun-redis
+      - cityrun-geo # Geo 엔진에 의존성 추가
+    restart: always
+
+  # (4) Geo 엔진 서버 (Node.js) - 로컬 빌드
+  cityrun-geo:
+    build:
+      context: ./cityrun-geo
+      dockerfile: Dockerfile
+    container_name: cityrun-geo
+    environment: # PostGIS 연결 정보
+      PG_HOST: cityrun-postgis
+      REDIS_HOST: cityrun-redis
+      PG_USER: cjh
+      PG_PASSWORD: 2323
+      PG_DB: osm_data
+    depends_on:
+      - cityrun-postgis
+      - cityrun-redis
+    restart: always
+
+  # (5) MySQL DB (Activity/User 데이터베이스)
+  cityrun-db:
+    image: mysql:8.0
+    container_name: cityrun-db
+    environment:
+      MYSQL_ROOT_PASSWORD: 2323
+      MYSQL_DATABASE: cityrun
+      MYSQL_USER: cjh
+      MYSQL_PASSWORD: 2323
+    volumes:
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    restart: always
+
+  # (6) PostGIS DB (Geo 데이터베이스) - Docker Hub 이미지 사용!
+  cityrun-postgis:
+    # Docker Hub에서 이미지 다운로드 (Push 성공한 이미지)
+    image: choijunhyeok1/cloud_native_cityrun_project:postgis-seoul-data
+    container_name: cityrun-postgis
+    environment:
+      POSTGRES_USER: cjh
+      POSTGRES_PASSWORD: 2323
+      POSTGRES_DB: osm_data
+    restart: always
+
+  # (7) Redis (세션 공유 서버)
+  cityrun-redis:
+    image: redis:7-alpine
+    container_name: cityrun-redis
+    restart: always

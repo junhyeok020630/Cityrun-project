@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # (1) 리버스 프록시 (Nginx)
+  cityrun-proxy:
+    image: nginx:latest
+    container_name: cityrun-proxy
+    ports:
+      - "80:80"        # HTTP (리다이렉트용)
+      - "443:443"      # HTTPS (메인 서비스)
+    volumes:
+      # Nginx 설정 파일 마운트
+      - ./infra/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      # SSL 인증서 파일 마운트
+      - ./infra/certs/cityrun.crt:/etc/nginx/certs/cityrun.crt:ro
+      - ./infra/certs/cityrun.key:/etc/nginx/certs/cityrun.key:ro
+    depends_on:
+      - cityrun-front
+      - cityrun-api
+      - cityrun-geo
+    restart: always
+
+  # (2) 프론트엔드 (React + Nginx) - PUSHED IMAGE
+  cityrun-front:
+    image: choijunhyeok1/cloud_native_cityrun_project:front-latest # ⭐️ 업로드된 이미지 사용 ⭐️
+    container_name: cityrun-front
+    restart: always
+
+  # (3) 메인 API 서버 (Spring Boot) - PUSHED IMAGE
+  cityrun-api:
+    image: choijunhyeok1/cloud_native_cityrun_project:api-latest # ⭐️ 업로드된 이미지 사용 ⭐️
+    container_name: cityrun-api
+    depends_on:
+      - cityrun-db
+      - cityrun-redis
+      - cityrun-geo
+    restart: always
+
+  # (4) Geo 엔진 서버 (Node.js) - PUSHED IMAGE
+  cityrun-geo:
+    image: choijunhyeok1/cloud_native_cityrun_project:geo-latest # ⭐️ 업로드된 이미지 사용 ⭐️
+    container_name: cityrun-geo
+    environment:
+      PG_HOST: cityrun-postgis
+      REDIS_HOST: cityrun-redis
+      PG_USER: cjh
+      PG_PASSWORD: 2323
+      PG_DB: osm_data
+    depends_on:
+      - cityrun-postgis
+      - cityrun-redis
+    restart: always
+
+  # (5) MySQL DB
+  cityrun-db:
+    image: mysql:8.0
+    container_name: cityrun-db
+    environment:
+      MYSQL_ROOT_PASSWORD: 2323
+      MYSQL_DATABASE: cityrun
+      MYSQL_USER: cjh
+      MYSQL_PASSWORD: 2323
+    volumes:
+      # DB 초기화 스크립트 마운트
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - db_data:/var/lib/mysql # DB 데이터 영속성을 위한 볼륨 마운트
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    restart: always
+
+  # (6) PostGIS DB (Geo 데이터베이스) - PUSHED IMAGE (데이터 포함)
+  cityrun-postgis:
+    image: choijunhyeok1/cloud_native_cityrun_project:postgis-seoul-data # ⭐️ 업로드된 이미지 사용 ⭐️
+    container_name: cityrun-postgis
+    environment:
+      POSTGRES_USER: cjh
+      POSTGRES_PASSWORD: 2323
+      POSTGRES_DB: osm_data
+    volumes:
+      - postgis_data:/var/lib/postgresql/data # PostGIS 데이터 영속성을 위한 볼륨 마운트
+    restart: always
+
+  # (7) Redis (세션 공유 서버)
+  cityrun-redis:
+    image: redis:7-alpine
+    container_name: cityrun-redis
+    restart: always
+
+# 영속적인 데이터 저장을 위한 볼륨 정의
+volumes:
+  db_data:
+  postgis_data:

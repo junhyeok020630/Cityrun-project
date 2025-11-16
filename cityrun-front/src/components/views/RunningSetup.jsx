@@ -64,23 +64,30 @@ const RunningSetup = (props) => {
       {/* --- 하단 컨트롤 영역 --- */}
       <div style={styles.controlsSection}>
 
-        {/* 재추천 버튼 또는 출발지 안내 텍스트 */}
-        <div style={styles.redoButtonContainer}>
+        {/* 🔻🔻 수정: 상단 액션 버튼 그룹 (재추천 + 저장) 🔻🔻 */}
+        <div style={styles.topActionControls}>
           {loading ? null : recommendedRoute ? (
-            // (A) 추천 경로가 있으면: 재추천 버튼 (↻) 표시
-            <button onClick={onRecommend} style={styles.redoButton}>
-              ↻
-            </button>
+            <>
+              {/* 재추천 버튼 */}
+              <button onClick={onRecommend} style={styles.topActionButton}>
+                ↻
+              </button>
+              {/* 경로 저장 버튼 (새로운 위치) */}
+              <button onClick={onSaveRoute} style={styles.topActionButton}>
+                💾
+              </button>
+            </>
           ) : !routeData.origin ? (
-            // (B) 추천 경로가 없고, 출발지도 없으면: 안내 문구 표시
+            // 출발지 설정이 필요할 때만 안내 문구 표시
             <span style={styles.instructionText}>
               출발지 설정이 필요합니다
             </span>
           ) : (
-            // (C) 출발지만 있으면: 빈 공간 유지 (아래 '경로 추천' 버튼이 있으므로)
-            null 
+            // 출발지는 설정했지만 아직 추천 전일 경우 빈 공간 유지
+            <div style={styles.placeholder}></div> 
           )}
         </div>
+        {/* 🔺🔺 수정 끝 🔺🔺 */}
 
         {/* 메인 컨트롤 버튼 (설정, 시작/추천, 검색) */}
         <div style={styles.mainControls}>
@@ -107,14 +114,8 @@ const RunningSetup = (props) => {
           </button>
         </div>
 
-        {/* 경로 저장 버튼 (추천 완료 시에만 노출) */}
-        <div style={styles.saveButtonContainer}>
-          {recommendedRoute && !loading && (
-            <button onClick={onSaveRoute} style={styles.saveButtonText}>
-              경로 저장
-            </button>
-          )}
-        </div>
+        {/* 이전 saveButtonContainer 자리의 공간 제거 */}
+        <div style={styles.bottomPlaceholder}></div>
       </div>
     </div>
   );
@@ -126,8 +127,8 @@ const styles = {
   setupContainer: {
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'space-between', // 상단은 위로, 하단은 아래로
-    height: '100%', // 부모(mainContent)의 100%
+    justifyContent: 'space-between', 
+    height: '100%', 
   },
   // 상단 영역 (패딩)
   topSection: {
@@ -164,24 +165,44 @@ const styles = {
     color: '#555',
     fontWeight: 'bold',
     textAlign: 'center',
-    padding: '20px 0', // DataPanel 대신 공간 차지
+    padding: '20px 0', 
   },
-  // 재추천 버튼 컨테이너 (높이 고정)
-  redoButtonContainer: {
-    height: '50px',
+  // 🔻🔻 새로 추가/수정된 스타일 🔻🔻
+  // 상단 액션 버튼 컨테이너 (재추천 + 저장)
+  topActionControls: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '15px', // 버튼 사이 간격
+    height: '50px', 
     marginBottom: '10px',
   },
-  // 재추천 버튼 (원형)
-  redoButton: {
+  // 재추천 / 저장 버튼 스타일 (통일)
+  topActionButton: {
     background: '#f0f0f0',
     border: '1px solid #ccc',
-    borderRadius: '50%',
+    borderRadius: '50%', // 원형
     width: '50px',
     height: '50px',
-    fontSize: '24px',
+    fontSize: '24px', // 아이콘 크기
     cursor: 'pointer',
     color: '#333',
+    display: 'flex', // 아이콘 중앙 정렬용
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 'normal', // 텍스트 대신 이모지이므로 굵기 조정
   },
+  // 안내 문구가 표시될 때 공간 차지용
+  placeholder: {
+    height: '50px', 
+  },
+  // 이전 저장 버튼의 공간을 채우기 위한 placeholder
+  bottomPlaceholder: {
+    height: '30px', // 이전 saveButtonContainer 높이
+    marginTop: '10px',
+  },
+  // 🔺🔺 수정 끝 🔺🔺
+
   // 메인 컨트롤 행 (설정/시작/검색)
   mainControls: {
     display: 'flex',
@@ -213,30 +234,7 @@ const styles = {
     cursor: 'pointer',
     boxShadow: '0 4px 10px rgba(0,0,0,0.2)',
   },
-  // 경로 저장 버튼 컨테이너 (높이 고정)
-  saveButtonContainer: {
-    height: '30px',
-    marginTop: '10px',
-  },
-  // 경로 저장 버튼 (텍스트 링크 스타일)
-  saveButtonText: {
-    background: 'white',
-    border: '1px solid #ccc',
-    color: 'black',
-    fontWeight: 'bold',
-    fontSize: '16px',
-    textDecoration: 'none',
-    cursor: 'pointer',
-    padding: '8px 16px',
-    borderRadius: '20px',
-  },
-  // (미사용) 상태 메시지
-  status: {
-    color: 'green',
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: '15px',
-  },
+  // (삭제된 saveButtonText 스타일)
 };
 
 export default RunningSetup;

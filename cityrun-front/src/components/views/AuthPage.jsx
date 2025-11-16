@@ -20,14 +20,21 @@ const AuthPage = ({ onLogin, onRegister }) => {
   const [nickname, setNickname] = useState('');
 
   // '로그인' 또는 '회원가입' 버튼 클릭 시 호출되는 핸들러
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault(); // Form의 기본 제출 동작(새로고침) 방지
     if (isLoginView) {
-      // 로그인 뷰이면 App.jsx의 onLogin 함수 호출
       onLogin(email, password);
     } else {
-      // 회원가입 뷰이면 App.jsx의 onRegister 함수 호출
-      onRegister(email, password, nickname);
+      // 🔻 수정: onRegister를 await로 호출하고 결과를 처리 🔻
+      const result = await onRegister(email, password, nickname);
+      
+      if (result === true) {
+        alert("회원가입 성공! 이제 로그인해주세요.");
+        setIsLoginView(true); // 성공 시 로그인 뷰로 전환
+      } else {
+        // App.jsx에서 반환된 실패 메시지를 alert로 표시
+        alert("회원가입 실패: " + result); 
+      }
     }
   };
 

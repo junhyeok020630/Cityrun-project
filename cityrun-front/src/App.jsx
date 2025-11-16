@@ -361,10 +361,12 @@ function App() {
     try {
       // /api/auth/register (POST)
       await axios.post('/api/auth/register', { email, password, nickname });
-      alert("회원가입 성공! 이제 로그인해주세요");
+      // 🔻 수정: 성공 시 true 반환 (alert 제거) 🔻
+      return true; // 성공 플래그 반환
     } catch (err) {
       console.error("회원가입 실패:", err);
-      alert("회원가입 실패: " + (err.response?.data?.message || '서버 오류'));
+      // 🔻 수정: 실패 메시지 또는 기본 오류 메시지 반환 🔻
+      return err.response?.data?.message || '서버 오류'; 
     }
   };
 
@@ -623,8 +625,8 @@ const styles = {
   // 모바일 화면을 흉내 내는 최상위 컨테이너
   mobileContainer: {
     maxWidth: '500px', 
-    height: '98vh', // 뷰포트 높이
-    overflow: 'hidden', // 내부 스크롤 방지
+    minHeight: '98vh', // 뷰포트 높이
+    overflow: 'auto', // 내부 스크롤 방지
     margin: '0 auto',
     border: '1px solid #ddd',
     display: 'flex',
@@ -638,7 +640,7 @@ const styles = {
     position: 'relative', 
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden', // 자식 컴포넌트(ActivityPage 등)의 스크롤 기준
+    overflow: 'auto', // 자식 컴포넌트(ActivityPage 등)의 스크롤 기준
   },
   // 세션 로딩 중 텍스트
   loadingText: {
